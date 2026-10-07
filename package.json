@@ -1,0 +1,36 @@
+{
+  "name": "scanbox-photo-studio",
+  "version": "1.0.0",
+  "description": "A Windows desktop app for scanning and batch cropping family photos",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "sharp": "^0.34.3"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "studio.scanbox.photos",
+    "productName": "Scanbox Photo Studio",
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Scanbox-Photo-Studio-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

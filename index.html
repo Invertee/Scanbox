@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self' https://tile.openstreetmap.org; font-src 'self' data:" />
+    <title>Scanbox Photo Studio</title>
+    <link rel="stylesheet" href="node_modules/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="side-label recent-label">YOUR SCANNER</div>
+        <div class="scanner-status-card">
+          <div class="scanner-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8V4h14v4M5 17H3V9h18v8h-2M6 14h12v6H6z"/><path d="M7 11h.01"/></svg></div>
+          <div class="scanner-status-copy"><strong id="sidebarScannerName">Scanner not selected</strong><span id="sidebarScannerDriver">Connect a flatbed scanner</span></div>
+          <i class="status-dot" id="scannerStatusDot"></i>
+        </div>
+        <div class="side-label scanner-controls-label">SCAN SETTINGS</div>
+        <div class="sidebar-settings">
+          <div class="setting-block driver-setting">
+            <label for="driverSelect">SCANNER DRIVER</label>
+            <select id="driverSelect"><option value="wia">Windows Image Acquisition</option><option value="twain">TWAIN</option></select>
+          </div>
+          <div class="setting-block device-setting">
+            <label for="deviceSelect">FLATBED SCANNER</label>
+            <div class="select-with-action"><select id="deviceSelect"><option value="">Find a scanner to begin</option></select><button class="refresh-button" id="refreshScanners" title="Refresh scanner list">↻</button></div>
+          </div>
+          <div class="setting-block dpi-setting">
+            <label for="dpiSelect">SCAN RESOLUTION</label>
+            <div class="dpi-field"><select id="dpiSelect"><option value="300" selected>300</option><option value="600">600</option><option value="1200">1200</option><option value="150">150</option></select><span>DPI</span></div>
+          </div>
+          <div class="setting-note"><span class="info-mark">i</span><span>Higher DPI keeps fine detail.<br />600 DPI is great for archiving.</span></div>
+        </div>
+        <button class="text-button setup-link" id="setupBtn">Scanner setup <span>↗</span></button>
+
+        <div class="sidebar-bottom">
+          <div class="app-version">SCANBOX PHOTO STUDIO <span>v1.0</span></div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <div class="main-scroll">
+          <section class="meta-toolbar">
+            <div class="meta-heading"><div class="meta-icon date-icon">◷</div><div><strong>Photo details</strong><span>Filled details are added to selected photos when you save</span></div></div>
+            <div class="meta-inputs">
+              <div class="date-input-wrap"><span>PHOTO DATE</span><div class="date-parts" role="group" aria-label="Photo date, day month year">
+                <div class="date-part date-part-day"><input id="dateDayInput" type="text" inputmode="numeric" autocomplete="off" maxlength="2" placeholder="DD" aria-label="Day" /><span class="date-stepper"><button type="button" class="date-step-button" data-date-target="dateDayInput" data-step="1" aria-label="Increase day">▲</button><button type="button" class="date-step-button" data-date-target="dateDayInput" data-step="-1" aria-label="Decrease day">▼</button></span></div>
+                <span aria-hidden="true">/</span>
+                <div class="date-part date-part-month"><input id="dateMonthInput" type="text" inputmode="numeric" autocomplete="off" maxlength="2" placeholder="MM" aria-label="Month" /><span class="date-stepper"><button type="button" class="date-step-button" data-date-target="dateMonthInput" data-step="1" aria-label="Increase month">▲</button><button type="button" class="date-step-button" data-date-target="dateMonthInput" data-step="-1" aria-label="Decrease month">▼</button></span></div>
+                <span aria-hidden="true">/</span>
+                <div class="date-part date-part-year"><input id="dateYearInput" type="text" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="YYYY" aria-label="Year" /><span class="date-stepper"><button type="button" class="date-step-button" data-date-target="dateYearInput" data-step="1" aria-label="Increase year">▲</button><button type="button" class="date-step-button" data-date-target="dateYearInput" data-step="-1" aria-label="Decrease year">▼</button></span></div>
+              </div></div>
+              <div class="place-input-wrap"><span>PHOTO LOCATION</span><button id="mapOpenBtn" class="place-select"><span class="pin-icon">⌖</span><span id="placeSummary">No location selected</span><span class="place-chevron">⌄</span></button></div>
+              <div class="capture-actions">
+                <button class="button button-primary" id="scanBtn"><span class="button-glyph">⌗</span><span><strong>Scan A4 page</strong><small id="scanButtonDetail">300 DPI · colour</small></span></button>
+                <button class="button button-secondary" id="importBtn"><span class="button-glyph import-glyph">↑</span><span><strong>Import an image</strong><small>Test crop detection</small></span></button>
+              </div>
+            </div>
+          </section>
+
+          <div class="content-grid">
+            <section class="preview-panel panel">
+              <div class="panel-heading">
+                <div><h3>Flatbed preview</h3><p id="previewSubtitle">Your A4 scan will appear here</p></div>
+                <div class="preview-tools"><span id="detectedPill" class="count-pill">0 photos found</span><button class="subtle-button" id="redetectBtn" disabled>↻ &nbsp; Re-detect</button></div>
+              </div>
+              <div class="preview-stage" id="previewStage">
+                <div class="empty-preview" id="emptyPreview">
+                  <div class="empty-scanner-art"><div class="scanner-lid"></div><div class="scanner-bed"><div class="bed-photo bed-photo-one"></div><div class="bed-photo bed-photo-two"></div><div class="bed-photo bed-photo-three"></div><div class="scan-glint"></div></div></div>
+                  <h3>Place your photos on the glass</h3>
+                  <p>Leave a little space between each print.<br />We’ll find and crop them from the page.</p>
+                  <button class="text-button empty-import" id="emptyImportBtn">Or import an image to try it <span>→</span></button>
+                </div>
+                <div class="canvas-wrap hidden" id="canvasWrap"><canvas id="scanCanvas" aria-label="Scan preview with detected crop regions. Select a photo, then drag the left handle to move it or the right handle to rotate it."></canvas><div class="drag-hint" id="dragHint"><span>＋</span> Drag to add a crop</div></div>
+                <div class="processing-overlay hidden" id="processingOverlay"><div class="spinner"></div><strong id="processingTitle">Reading your page…</strong><span id="processingDetail">This can take a moment at high resolution</span></div>
+              </div>
+              <div class="preview-footer"><span><i class="legend-box"></i> Detected photo <i class="legend-box legend-unselected"></i> Excluded</span><label class="sensitivity-control"><span>EDGE</span><input id="sensitivity" type="range" min="220" max="252" step="2" value="242"><b id="sensitivityValue">242</b></label><span class="manual-tip">Drag to crop · select a photo, then drag left to move or right to rotate</span></div>
+            </section>
+
+            <section class="photos-panel panel">
+              <div class="panel-heading photo-heading">
+                <div><h3>Photos in this batch</h3><p id="selectionSummary">No photos yet</p></div>
+                <button id="selectAllBtn" class="select-all hidden">Deselect all</button>
+              </div>
+              <div id="photoList" class="photo-list">
+                <div class="photo-list-empty"><div class="empty-stack">▱</div><strong>Your crops will show up here</strong><span>Each photo is ready to review before saving.</span></div>
+              </div>
+              <div class="save-area">
+                <div class="save-heading"><div><strong>Save cropped photos</strong><span>JPEG · High quality</span></div><span class="save-lock">LOCAL</span></div>
+                <div class="save-fields"><label><span>FILE NAME</span><input id="filenamePrefix" type="text" value="Photo" maxlength="32" /></label><label class="start-number"><span>START AT</span><input id="startNumber" type="number" value="1" min="1" max="99999" /></label></div>
+                <div class="folder-row"><button id="chooseFolderBtn" class="folder-button"><span class="folder-icon">▰</span><span id="folderSummary">Choose a save folder</span><b>Browse</b></button></div>
+                <button id="saveBtn" class="button button-save" disabled><span>Save selected photos</span><span class="save-arrow">→</span></button>
+                <p class="exif-note"><span>✓</span> Date and GPS coordinates are written into each photo’s EXIF data.</p>
+              </div>
+            </section>
+          </div>
+          <div id="toast" class="toast hidden" role="status"></div>
+        </div>
+      </main>
+    </div>
+
+    <div id="mapModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="mapTitle">
+      <div class="map-dialog">
+        <div class="map-header"><div><span class="eyebrow">PHOTO LOCATION</span><h2 id="mapTitle">Choose a place on the map</h2><p>Click anywhere on the map to set the GPS coordinates.</p></div><button id="closeMapBtn" class="icon-button close-button" aria-label="Close map">×</button></div>
+        <div id="map" class="map-canvas"></div>
+        <div class="map-footer"><div class="coordinates"><span class="coordinate-pin">⌖</span><span><small>SELECTED COORDINATES</small><strong id="coordinateText">No point selected</strong></span></div><div class="map-actions"><button id="clearLocationBtn" class="button button-secondary button-small">Clear location</button><button id="confirmLocationBtn" class="button button-primary button-small" disabled>Use this location</button></div></div>
+      </div>
+    </div>
+    <script src="node_modules/leaflet/dist/leaflet.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>
