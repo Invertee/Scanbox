@@ -440,10 +440,13 @@ function clearLocation() {
   elements.coordinateText.textContent = 'No point selected'; elements.confirmPlace.disabled = true; elements.placeSummary.textContent = 'No location selected';
 }
 
-function eventToImagePoint(event) {
+function eventToImagePoint(event, clampToImage = true) {
   const rect = elements.canvas.getBoundingClientRect();
-  return { x: Math.max(0, Math.min(state.batch.width, (event.clientX - rect.left) / rect.width * state.batch.width)),
-    y: Math.max(0, Math.min(state.batch.height, (event.clientY - rect.top) / rect.height * state.batch.height)) };
+  const x = (event.clientX - rect.left) / rect.width * state.batch.width;
+  const y = (event.clientY - rect.top) / rect.height * state.batch.height;
+  return clampToImage
+    ? { x: Math.max(0, Math.min(state.batch.width, x)), y: Math.max(0, Math.min(state.batch.height, y)) }
+    : { x, y };
 }
 
 function cropAtHandle(clientX, clientY) {
@@ -471,15 +474,8 @@ function cropAtHandle(clientX, clientY) {
 }
 
 function moveCropTo(crop, x, y) {
-  const angle = cropRotation(crop) * Math.PI / 180;
-  const halfWidth = (Math.abs(Math.cos(angle)) * crop.width + Math.abs(Math.sin(angle)) * crop.height) / 2;
-  const halfHeight = (Math.abs(Math.sin(angle)) * crop.width + Math.abs(Math.cos(angle)) * crop.height) / 2;
-  const centerX = Math.max(Math.min(halfWidth, state.batch.width / 2),
-    Math.min(Math.max(state.batch.width - halfWidth, state.batch.width / 2), x + crop.width / 2));
-  const centerY = Math.max(Math.min(halfHeight, state.batch.height / 2),
-    Math.min(Math.max(state.batch.height - halfHeight, state.batch.height / 2), y + crop.height / 2));
-  crop.x = Math.round(Math.max(0, Math.min(state.batch.width - crop.width, centerX - crop.width / 2)));
-  crop.y = Math.round(Math.max(0, Math.min(state.batch.height - crop.height, centerY - crop.height / 2)));
+  crop.x = Math.round(x);
+  crop.y = Math.round(y);
 }
 
 function angleDelta(current, previous) {
@@ -534,7 +530,7 @@ function canvasPointerMove(event) {
     return;
   }
   if (state.rotating?.pointerId === event.pointerId) {
-    const point = eventToImagePoint(event);
+    const point = eventToImagePoint(event, false);
     const { crop } = state.rotating;
     const pointerAngle = Math.atan2(point.y - (crop.y + crop.height / 2), point.x - (crop.x + crop.width / 2));
     state.rotating.rotation += angleDelta(pointerAngle, state.rotating.previousPointerAngle) * 180 / Math.PI;
@@ -544,7 +540,7 @@ function canvasPointerMove(event) {
     return;
   }
   if (state.moving?.pointerId === event.pointerId) {
-    const point = eventToImagePoint(event);
+    const point = eventToImagePoint(event, false);
     moveCropTo(state.moving.crop, state.moving.x + point.x - state.moving.start.x, state.moving.y + point.y - state.moving.start.y);
     paintCanvas();
     return;

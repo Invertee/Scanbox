@@ -45,6 +45,24 @@ function rotatedImageDimensions(width, height, degrees) {
   };
 }
 
+function cropIntersectionPlan(desired, imageWidth, imageHeight) {
+  const left = Math.max(0, desired.left);
+  const top = Math.max(0, desired.top);
+  const right = Math.min(imageWidth, desired.left + desired.width);
+  const bottom = Math.min(imageHeight, desired.top + desired.height);
+  const extract = { left, top, width: right - left, height: bottom - top };
+  return {
+    extract,
+    padding: {
+      left: left - desired.left,
+      top: top - desired.top,
+      right: desired.left + desired.width - right,
+      bottom: desired.top + desired.height - bottom,
+      background: '#fff'
+    }
+  };
+}
+
 function cropAfterRotation(batch, crop, width, height, degrees) {
   const radians = -degrees * Math.PI / 180;
   const cosine = Math.cos(radians);
@@ -55,22 +73,7 @@ function cropAfterRotation(batch, crop, width, height, degrees) {
   const rotatedCenterX = cosine * centerX - sine * centerY + rotated.width / 2;
   const rotatedCenterY = sine * centerX + cosine * centerY + rotated.height / 2;
   const desired = { left: Math.round(rotatedCenterX - width / 2), top: Math.round(rotatedCenterY - height / 2), width, height };
-  const left = Math.max(0, desired.left);
-  const top = Math.max(0, desired.top);
-  const right = Math.min(rotated.width, desired.left + width);
-  const bottom = Math.min(rotated.height, desired.top + height);
-  const extract = { left, top, width: right - left, height: bottom - top };
-  return {
-    rotated,
-    extract,
-    padding: {
-      left: left - desired.left,
-      top: top - desired.top,
-      right: desired.left + width - right,
-      bottom: desired.top + height - bottom,
-      background: '#fff'
-    }
-  };
+  return cropIntersectionPlan(desired, rotated.width, rotated.height);
 }
 
 function createWindow() {
@@ -282,14 +285,17 @@ function registerIpc() {
       const rectValues = [crop.x, crop.y, crop.width, crop.height].map(Number);
       if (!rectValues.every(Number.isFinite)) throw new Error('A crop has invalid boundaries.');
       const [left, top, cropWidth, cropHeight] = rectValues.map(Math.round);
+      if (![left, top, cropWidth, cropHeight].every(Number.isSafeInteger) || cropWidth < 1 || cropHeight < 1 || cropWidth > batch.width || cropHeight > batch.height) {
+        throw new Error('A crop has invalid boundaries.');
+      }
       const rotation = Number(crop.rotation ?? 0);
       if (!Number.isFinite(rotation) || Math.abs(rotation) > 180) throw new Error('A crop has an invalid rotation.');
-      if (left < 0 || top < 0 || cropWidth < 1 || cropHeight < 1 || left + cropWidth > batch.width || top + cropHeight > batch.height) {
-        throw new Error('A crop falls outside the scan. Please review the crop boxes.');
-      }
-      const cropPlan = rotation === 0 ? null : cropAfterRotation(batch, { x: left, y: top }, cropWidth, cropHeight, rotation);
-      const cropRect = cropPlan?.extract || { left, top, width: cropWidth, height: cropHeight };
-      if (left === 0 && top === 0 && cropWidth === batch.width && cropHeight === batch.height) {
+      const cropPlan = rotation === 0
+        ? cropIntersectionPlan({ left, top, width: cropWidth, height: cropHeight }, batch.width, batch.height)
+        : cropAfterRotation(batch, { x: left, y: top }, cropWidth, cropHeight, rotation);
+      if (cropPlan.extract.width < 1 || cropPlan.extract.height < 1) throw new Error('This crop does not overlap the scan. Move it back over the image before saving.');
+      const cropRect = cropPlan.extract;
+      if (rotation === 0 && left <= 0 && top <= 0 && left + cropWidth >= batch.width && top + cropHeight >= batch.height) {
         throw new Error('A full-page selection would export the original image. Draw a crop around each photo instead.');
       }
       const number = startingNumber + index;
@@ -325,7 +331,7 @@ function registerIpc() {
       if (rotation === 0) image.rotate();
       else image.autoOrient().rotate(-rotation, { background: '#fff' });
       image.extract(cropRect);
-      if (cropPlan && Object.values(cropPlan.padding).some((amount) => typeof amount === 'number' && amount > 0)) {
+      if (Object.values(cropPlan.padding).some((amount) => typeof amount === 'number' && amount > 0)) {
         image.extend(cropPlan.padding);
       }
       await image

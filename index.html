@@ -73,7 +73,7 @@
                   <p>Leave a little space between each print.<br />We’ll find and crop them from the page.</p>
                   <button class="text-button empty-import" id="emptyImportBtn">Or import an image to try it <span>→</span></button>
                 </div>
-                <div class="canvas-wrap hidden" id="canvasWrap"><canvas id="scanCanvas" aria-label="Scan preview with detected crop regions. Select a photo, then drag the left handle to move it or the right handle to rotate it."></canvas><div class="drag-hint" id="dragHint"><span>＋</span> Drag to add a crop</div></div>
+                <div class="canvas-wrap hidden" id="canvasWrap"><canvas id="scanCanvas" aria-label="Scan preview with detected crop regions. Select a photo, then drag the left handle to move it, including beyond the scan edge, or the right handle to rotate it."></canvas><div class="drag-hint" id="dragHint"><span>＋</span> Drag to add a crop</div></div>
                 <div class="processing-overlay hidden" id="processingOverlay"><div class="spinner"></div><strong id="processingTitle">Reading your page…</strong><span id="processingDetail">This can take a moment at high resolution</span></div>
               </div>
               <div class="preview-footer"><span><i class="legend-box"></i> Detected photo <i class="legend-box legend-unselected"></i> Excluded</span><label class="sensitivity-control"><span>EDGE</span><input id="sensitivity" type="range" min="220" max="252" step="2" value="242"><b id="sensitivityValue">242</b></label><span class="manual-tip">Drag to crop · select a photo, then drag left to move or right to rotate</span></div>
