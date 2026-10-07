@@ -1,13 +1,15 @@
 # Scanbox Photo Studio
 
+![Scanbox Photo Studio](https://raw.githubusercontent.com/Invertee/Scanbox/main/box.png)
+
 A Windows desktop app for scanning several prints from an A4 flatbed, separating the photos, reviewing the crop boxes, and exporting individual JPEGs with EXIF dates and GPS coordinates.
 
 ## What it does
 
-- Scans A4 colour pages at 150, 300, 600, or 1200 DPI through a WIA or TWAIN scanner driver.
+- Scans A4 colour pages at various DPIs through a WIA or TWAIN scanner driver.
 - Detects photo regions on the page and displays numbered crop boxes for review.
 - Select a crop and drag its left handle to move it or its right handle to rotate it.
-- Lets you exclude crops, remove them, or drag a box on the scan to add a manual crop.
+- Lets you exclude crops, remove them, or drag a box on the scan to add a manual crop, move and rotate as required
 - Imports existing JPEG, PNG, TIFF, BMP, or WebP images for crop practice without connecting a scanner.
 - Applies a selected photo date and an OpenStreetMap-picked location to selected crops.
 - Saves high-quality JPEGs with EXIF date, GPS, and resolution tags.
