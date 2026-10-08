@@ -119,12 +119,12 @@ async function initializeAdjustments() {
 
 if (!electronMode) {
   document.body.classList.add('browser-mode');
-  document.querySelector('.empty-preview h3').textContent = 'Import a page or photo';
+  document.querySelector('.empty-preview h3').textContent = 'Upload a page or photo';
   document.querySelector('.empty-preview p').innerHTML = 'Choose an image from your device to start cropping.<br />Your selected photos will download as JPEGs.';
   document.querySelector('.panel-heading h3').textContent = 'Image preview';
   elements.subtitle.textContent = 'Choose an image to begin';
-  elements.import.querySelector('strong').textContent = 'Choose an image';
-  elements.import.querySelector('small').textContent = 'from this device';
+  elements.import.querySelector('strong').textContent = 'Upload an image';
+  elements.emptyImport.innerHTML = 'Upload an image to start <span>→</span>';
   document.querySelector('.meta-heading span').textContent = 'Details are saved in this browser';
   elements.saveNote.innerHTML = '<span>✓</span> Date, GPS coordinates, and resolution are embedded in each downloaded JPEG.';
 }

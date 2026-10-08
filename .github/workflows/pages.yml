@@ -33,7 +33,8 @@ jobs:
       - name: Prepare static site
         run: |
           mkdir -p _site/vendor
-          cp index.html styles.css renderer.js cropper.js browser-exif.js _site/
+          cp index.html styles.css renderer.js cropper.js browser-exif.js image-adjustments.js _site/
+          cp favicon.png icon.ico apple-touch-icon.png _site/
           cp -R vendor/leaflet _site/vendor/leaflet
           touch _site/.nojekyll
 
