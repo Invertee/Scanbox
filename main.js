@@ -3,7 +3,9 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const sharp = require('sharp');
+const { openImage } = require('./image-input');
+const adjustments = require('./image-adjustments');
+const { adjustedExport } = require('./adjusted-export');
 const { listDevices, scanA4 } = require('./scanner');
 const { findPhotoRegions } = require('./cropper');
 
@@ -17,6 +19,7 @@ let lastPhotoDate = { day: '', month: '', year: '' };
 let lastPhotoBirthday = { enabled: false, dateOfBirth: '', age: '' };
 let lastPhotoLocation = null;
 let preferenceWrites = Promise.resolve();
+let lastAdjustments = adjustments.normalize();
 
 function preferencesPath() {
   return path.join(app.getPath('userData'), 'preferences.json');
@@ -29,12 +32,13 @@ async function loadPreferences() {
     lastPhotoDate = normalizePhotoDate(preferences.photoDate);
     lastPhotoBirthday = normalizePhotoBirthday(preferences.photoBirthday);
     lastPhotoLocation = normalizePhotoLocation(preferences.photoLocation);
+    lastAdjustments = adjustments.normalize(preferences.imageAdjustments);
   } catch { /* First launch or unreadable preferences: use defaults. */ }
 }
 
 function savePreferences() {
   const filePath = preferencesPath();
-  const contents = JSON.stringify({ lastOutputDirectory, photoDate: lastPhotoDate, photoBirthday: lastPhotoBirthday, photoLocation: lastPhotoLocation }, null, 2);
+  const contents = JSON.stringify({ lastOutputDirectory, photoDate: lastPhotoDate, photoBirthday: lastPhotoBirthday, photoLocation: lastPhotoLocation, imageAdjustments: lastAdjustments }, null, 2);
   preferenceWrites = preferenceWrites.catch(() => {}).then(async () => {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, contents, 'utf8');
@@ -119,6 +123,7 @@ function createWindow() {
     minHeight: 740,
     backgroundColor: '#f5f6f2',
     title: 'Scanbox',
+    icon: path.join(__dirname, 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -138,12 +143,12 @@ function assertTrustedSender(event) {
 }
 
 async function getPreviewAndCrops(imagePath, threshold = 242, padding = 0.025, detectPhotos = true) {
-  const metadata = await sharp(imagePath, { limitInputPixels: 160_000_000 }).metadata();
+  const metadata = await openImage(imagePath).metadata();
   if (!metadata.width || !metadata.height) throw new Error('This image could not be read.');
   const orientationSwapsDimensions = [5, 6, 7, 8].includes(metadata.orientation);
   const width = orientationSwapsDimensions ? metadata.height : metadata.width;
   const height = orientationSwapsDimensions ? metadata.width : metadata.height;
-  const preview = await sharp(imagePath, { limitInputPixels: 160_000_000 })
+  const preview = await openImage(imagePath)
     .rotate()
     .resize({ width: Math.min(1600, width), withoutEnlargement: true })
     .jpeg({ quality: 78 })
@@ -154,7 +159,7 @@ async function getPreviewAndCrops(imagePath, threshold = 242, padding = 0.025, d
   let detectionWidth = width;
   let detectionHeight = height;
   if (detectPhotos) {
-    const page = await sharp(imagePath, { limitInputPixels: 160_000_000 })
+    const page = await openImage(imagePath)
       .rotate()
       .resize({ width: 1400, withoutEnlargement: true })
       .greyscale()
@@ -282,6 +287,16 @@ function gpsCoordinate(value, positiveRef, negativeRef) {
 }
 
 function registerIpc() {
+  ipcMain.handle('adjustments:last-used', async (event) => {
+    assertTrustedSender(event);
+    return { ...lastAdjustments };
+  });
+  ipcMain.handle('adjustments:save', async (event, settings) => {
+    assertTrustedSender(event);
+    lastAdjustments = adjustments.normalize(settings);
+    await savePreferences();
+    return { ...lastAdjustments };
+  });
   ipcMain.handle('scanner:list', async (event) => {
     assertTrustedSender(event);
     return listDevices();
@@ -366,6 +381,7 @@ function registerIpc() {
   ipcMain.handle('batch:save', async (event, payload) => {
     assertTrustedSender(event);
     const batch = requireBatch(payload.batchId);
+    const exportAdjustments = adjustments.normalize(payload.adjustments || lastAdjustments);
     if (typeof payload.outputDirectory !== 'string' || !payload.outputDirectory.trim()) throw new Error('Choose an output folder first.');
     const outputDirectory = path.resolve(payload.outputDirectory);
     await fs.mkdir(outputDirectory, { recursive: true });
@@ -425,14 +441,15 @@ function registerIpc() {
           GPSLongitude: gpsLongitude.value
         };
       }
-      const image = sharp(batch.imagePath, { limitInputPixels: 160_000_000 });
+      const image = openImage(batch.imagePath);
       if (rotation === 0) image.rotate();
       else image.autoOrient().rotate(-rotation, { background: '#fff' });
       image.extract(cropRect);
       if (Object.values(cropPlan.padding).some((amount) => typeof amount === 'number' && amount > 0)) {
         image.extend(cropPlan.padding);
       }
-      await image
+      const output = await adjustedExport(image, exportAdjustments);
+      await output
         .withMetadata({ density: batch.dpi || 300 })
         .withExif(exif)
         .jpeg({ quality: 96, mozjpeg: true })
@@ -481,6 +498,7 @@ app.on('before-quit', async (event) => {
   event.preventDefault();
   isCleaningUp = true;
   await discardActiveBatch();
+  await preferenceWrites.catch(() => {});
   app.removeAllListeners('before-quit');
   app.quit();
 });

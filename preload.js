@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('scanbox', {
   getLastOutputFolder: () => ipcRenderer.invoke('folder:last-used'),
   getLastPhotoDetails: () => ipcRenderer.invoke('photo-details:last-used'),
   savePhotoDetails: (details) => ipcRenderer.invoke('photo-details:save', details),
+  getAdjustments: () => ipcRenderer.invoke('adjustments:last-used'),
+  saveAdjustments: (settings) => ipcRenderer.invoke('adjustments:save', settings),
   getNextOutputNumber: (options) => ipcRenderer.invoke('folder:next-number', options),
   saveBatch: (payload) => ipcRenderer.invoke('batch:save', payload),
   openScannerHelp: () => ipcRenderer.invoke('app:open-scanner-help'),

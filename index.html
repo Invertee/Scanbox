@@ -3,6 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="favicon.png" sizes="64x64" />
+    <link rel="icon" type="image/x-icon" href="icon.ico" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://tile.openstreetmap.org; connect-src 'self' https://tile.openstreetmap.org https://nominatim.openstreetmap.org; font-src 'self' data:" />
     <title>Scanbox</title>
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
@@ -11,6 +14,7 @@
   <body>
     <div class="app-shell">
       <aside class="sidebar">
+        <div class="brand-lockup"><span>Scanbox</span></div>
         <div class="side-label recent-label">YOUR SCANNER</div>
         <div class="scanner-status-card">
           <div class="scanner-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8V4h14v4M5 17H3V9h18v8h-2M6 14h12v6H6z"/><path d="M7 11h.01"/></svg></div>
@@ -36,7 +40,7 @@
         <button class="text-button setup-link" id="setupBtn">Scanner setup <span>↗</span></button>
 
         <div class="sidebar-bottom">
-          <div class="app-version">SCANBOX <span>v1.0</span></div>
+          <div class="app-version">SCANBOX <span>v1.1.0</span></div>
         </div>
       </aside>
 
@@ -62,11 +66,22 @@
               <div class="place-input-wrap"><span>PHOTO LOCATION</span><button id="mapOpenBtn" class="place-select"><span class="pin-icon">⌖</span><span id="placeSummary">No location selected</span><span class="place-chevron">⌄</span></button></div>
               <div class="capture-actions">
                 <button class="button button-primary" id="scanBtn"><span class="button-glyph">⌗</span><span><strong>Scan A4 page</strong><small id="scanButtonDetail">300 DPI · colour</small></span></button>
-                <button class="button button-secondary" id="importBtn"><span class="button-glyph import-glyph">↑</span><span><strong>Import an image</strong><small>Test crop detection</small></span></button>
+                <button class="button button-secondary" id="importBtn"><span class="button-glyph import-glyph">↑</span><span><strong>Import an image</strong></span></button>
               </div>
             </div>
           </section>
 
+          <section class="adjustment-toolbar panel" aria-label="Image adjustments">
+            <div class="adjustment-heading">
+              <button type="button" id="adjustmentsToggle" class="adjustments-toggle" aria-expanded="false" aria-controls="adjustmentsBody">Image adjustments <span aria-hidden="true">⌄</span></button>
+              <span id="adjustmentsSummary" class="adjustments-summary">Original image</span>
+            </div>
+            <div id="adjustmentsBody" class="adjustments-body hidden">
+              <div class="adjustment-actions"><label><input id="adjustmentsEnabled" type="checkbox" checked /> Apply adjustments</label><button type="button" id="adjustmentsReset" class="subtle-button">Reset all</button></div>
+              <div id="adjustmentsSliders" class="adjustment-sliders"></div>
+              <p>Applies to every photo when saved. Settings are remembered for your next scan.</p>
+            </div>
+          </section>
           <div class="content-grid">
             <section class="preview-panel panel">
               <div class="panel-heading">
@@ -129,6 +144,7 @@
     <script src="vendor/leaflet/leaflet.js"></script>
     <script src="cropper.js"></script>
     <script src="browser-exif.js"></script>
+    <script src="image-adjustments.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>

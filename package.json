@@ -1,10 +1,11 @@
 {
   "name": "scanbox",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A Windows desktop app for scanning and batch cropping family photos",
   "main": "main.js",
   "private": true,
   "scripts": {
+    "test": "node --test image-input.test.js image-adjustments.test.js",
     "start": "electron .",
     "dist": "electron-builder --win nsis"
   },
@@ -21,6 +22,7 @@
     "productName": "Scanbox",
     "asar": true,
     "win": {
+      "icon": "icon.ico",
       "target": [
         "nsis"
       ],

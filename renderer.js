@@ -1,6 +1,12 @@
 const electronMode = Boolean(window.scanbox);
 const state = { batch: null, devices: [], outputDirectory: '', place: null, map: null, marker: null, pendingPlace: null, mapSearchRequest: 0, manualId: 0, drawing: null, rotating: null, moving: null, resizing: null, panning: null, zoom: 1, panX: 0, panY: 0, toastTimer: null, busy: false, photoDetectionEnabled: true, birthdayMode: false, numberLookupId: 0, browserSourceUrl: null };
 const $ = (id) => document.getElementById(id);
+const imageAdjustments = window.ScanboxAdjustments;
+state.adjustments = imageAdjustments.normalize();
+state.adjustedPreview = null;
+let adjustmentFrame = null;
+let adjustmentSaveTimer = null;
+let adjustmentsReady = false;
 const elements = {
   scannerName: $('sidebarScannerName'), scannerDriver: $('sidebarScannerDriver'), scannerDot: $('scannerStatusDot'),
   driver: $('driverSelect'), device: $('deviceSelect'), dpi: $('dpiSelect'), scan: $('scanBtn'), scanDetail: $('scanButtonDetail'),
@@ -18,6 +24,98 @@ const elements = {
   sensitivity: $('sensitivity'), sensitivityValue: $('sensitivityValue'),
   browserImage: $('browserImageInput'), saveNote: $('saveNote')
 };
+
+function updateAdjustmentControls() {
+  const settings = state.adjustments;
+  $('adjustmentsToggle').setAttribute('aria-expanded', String(settings.expanded));
+  $('adjustmentsBody').classList.toggle('hidden', !settings.expanded);
+  $('adjustmentsEnabled').checked = settings.enabled;
+  $('adjustmentsEnabled').disabled = state.busy || !adjustmentsReady;
+  $('adjustmentsReset').disabled = state.busy || !adjustmentsReady;
+  $('adjustmentsToggle').disabled = !adjustmentsReady;
+  $('adjustmentsSummary').textContent = !settings.enabled ? 'Adjustments off'
+    : imageAdjustments.isActive(settings) ? 'Applied to preview and saved photos' : 'Original image';
+  for (const control of imageAdjustments.controls) {
+    const input = $(`adjustment-${control.key}`);
+    input.value = settings[control.key];
+    input.disabled = state.busy || !settings.enabled || !adjustmentsReady;
+    const value = Number(settings[control.key]);
+    $(`adjustment-value-${control.key}`).textContent = control.key === 'exposure'
+      ? `${value > 0 ? '+' : ''}${value.toFixed(1)} EV` : `${value > 0 ? '+' : ''}${value}`;
+  }
+}
+
+function adjustCanvas(canvas, settings) {
+  if (!imageAdjustments.isActive(settings)) return;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  imageAdjustments.apply(pixels.data, canvas.width, canvas.height, 4, settings);
+  context.putImageData(pixels, 0, 0);
+}
+
+function refreshAdjustedPreview() {
+  state.adjustedPreview = null;
+  if (state.batch && imageAdjustments.isActive(state.adjustments)) {
+    const canvas = document.createElement('canvas');
+    canvas.width = state.batch.previewWidth;
+    canvas.height = state.batch.previewHeight;
+    canvas.getContext('2d', { willReadFrequently: true }).drawImage(state.batch.previewImage, 0, 0);
+    adjustCanvas(canvas, state.adjustments);
+    state.adjustedPreview = canvas;
+  }
+  renderPhotoList();
+}
+
+async function persistAdjustments() {
+  clearTimeout(adjustmentSaveTimer);
+  try {
+    if (electronMode) await window.scanbox.saveAdjustments({ ...state.adjustments });
+    else localStorage.setItem('scanbox-image-adjustments', JSON.stringify(state.adjustments));
+  } catch { showToast('Image adjustments could not be remembered. Your current changes still apply.', true); }
+}
+
+function changeAdjustments(updates, immediate = false) {
+  state.adjustments = imageAdjustments.normalize({ ...state.adjustments, ...updates });
+  updateAdjustmentControls();
+  if (adjustmentFrame !== null) cancelAnimationFrame(adjustmentFrame);
+  adjustmentFrame = requestAnimationFrame(() => { adjustmentFrame = null; refreshAdjustedPreview(); });
+  clearTimeout(adjustmentSaveTimer);
+  if (immediate) persistAdjustments();
+  else adjustmentSaveTimer = setTimeout(persistAdjustments, 180);
+}
+
+async function initializeAdjustments() {
+  for (const control of imageAdjustments.controls) {
+    const label = document.createElement('label');
+    label.className = 'adjustment-control';
+    const caption = document.createElement('span');
+    caption.textContent = control.label;
+    const output = document.createElement('output');
+    output.id = `adjustment-value-${control.key}`;
+    const input = document.createElement('input');
+    input.id = `adjustment-${control.key}`;
+    input.type = 'range';
+    input.min = control.min; input.max = control.max; input.step = control.step;
+    label.htmlFor = input.id;
+    output.setAttribute('for', input.id);
+    input.addEventListener('input', () => changeAdjustments({ [control.key]: Number(input.value) }));
+    input.addEventListener('change', persistAdjustments);
+    label.append(caption, output, input);
+    $('adjustmentsSliders').append(label);
+  }
+  updateAdjustmentControls();
+  try {
+    const saved = electronMode ? await window.scanbox.getAdjustments()
+      : JSON.parse(localStorage.getItem('scanbox-image-adjustments') || '{}');
+    state.adjustments = imageAdjustments.normalize(saved);
+  } catch { showToast('Saved image adjustments could not be loaded.', true); }
+  adjustmentsReady = true;
+  updateAdjustmentControls();
+  refreshAdjustedPreview();
+  $('adjustmentsToggle').addEventListener('click', () => changeAdjustments({ expanded: !state.adjustments.expanded }, true));
+  $('adjustmentsEnabled').addEventListener('change', () => changeAdjustments({ enabled: $('adjustmentsEnabled').checked }, true));
+  $('adjustmentsReset').addEventListener('click', () => changeAdjustments({ ...imageAdjustments.normalize(), expanded: true }, true));
+}
 
 if (!electronMode) {
   document.body.classList.add('browser-mode');
@@ -258,7 +356,7 @@ function paintCanvas() {
   canvas.height = state.batch.previewHeight;
   applyPreviewTransform();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(state.batch.previewImage, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(state.adjustedPreview || state.batch.previewImage, 0, 0, canvas.width, canvas.height);
   state.batch.crops.forEach((crop, index) => {
     const box = previewBounds(crop);
     const angle = cropRotation(crop) * Math.PI / 180;
@@ -341,7 +439,7 @@ function paintCanvas() {
 
 function drawThumb(canvas, crop) {
   const ctx = canvas.getContext('2d');
-  const source = state.batch.previewImage;
+  const source = state.adjustedPreview || state.batch.previewImage;
   const scaleX = state.batch.previewWidth / state.batch.width;
   const scaleY = state.batch.previewHeight / state.batch.height;
   const sw = crop.width * scaleX;
@@ -402,7 +500,7 @@ function setBatch(batch) {
     state.zoom = 1; state.panX = 0; state.panY = 0;
     elements.empty.classList.add('hidden'); elements.canvasWrap.classList.remove('hidden');
     elements.subtitle.textContent = `${batch.sourceName || 'Flatbed image'} · ${batch.width.toLocaleString()} × ${batch.height.toLocaleString()} px`;
-    renderPhotoList();
+    refreshAdjustedPreview();
     if (!state.batch.crops.length && state.photoDetectionEnabled) showToast('No photos were detected. Try a cleaner scan or drag to add a crop.');
   };
   image.onerror = () => showToast('The image preview could not be loaded.', true);
@@ -451,6 +549,7 @@ function updateScannerStatus() {
 
 function setBusy(busy, title = 'Reading your page…', detail = 'This can take a moment at high resolution') {
   state.busy = busy;
+  updateAdjustmentControls();
   elements.overlay.classList.toggle('hidden', !busy); elements.processingTitle.textContent = title; elements.processingDetail.textContent = detail;
   elements.scan.disabled = busy; elements.import.disabled = busy; elements.emptyImport.disabled = busy; elements.refresh.disabled = busy;
   elements.chooseFolder.disabled = busy; elements.mapOpen.disabled = busy; elements.sensitivity.disabled = busy;
@@ -675,6 +774,7 @@ function browserCropCanvas(crop) {
 }
 
 async function browserJpegBlob(canvas, photo) {
+  adjustCanvas(canvas, state.adjustments);
   const jpeg = await new Promise((resolve, reject) => {
     canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('The browser could not encode a JPEG download.')), 'image/jpeg', .96);
   });
@@ -736,7 +836,7 @@ async function savePhotos() {
       return;
     }
     const result = await window.scanbox.saveBatch({ batchId: state.batch.batchId, outputDirectory: state.outputDirectory,
-      prefix: elements.prefix.value, startNumber: Number(elements.start.value) || 1, photos });
+      prefix: elements.prefix.value, startNumber: Number(elements.start.value) || 1, photos, adjustments: { ...state.adjustments } });
     const savedIds = new Set(result.savedIds || []);
     state.batch.crops.forEach((photo) => { if (savedIds.has(photo.id)) photo.selected = false; });
     renderPhotoList();
@@ -1198,6 +1298,7 @@ for (const button of document.querySelectorAll('.date-step-button')) {
   });
 }
 renderPhotoList();
+initializeAdjustments();
 restorePhotoDetails();
 restoreOutputFolder();
 loadDevices().then(updateScannerStatus);
