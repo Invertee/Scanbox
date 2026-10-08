@@ -118,7 +118,7 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 740,
     backgroundColor: '#f5f6f2',
-    title: 'Scanbox Photo Studio',
+    title: 'Scanbox',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -238,7 +238,7 @@ async function searchMapPlaces(query) {
   const response = await fetch(url, {
     headers: {
       Accept: 'application/json',
-      'User-Agent': `Scanbox-Photo-Studio/${app.getVersion()} (+https://github.com/Invertee/Scanbox)`
+      'User-Agent': `Scanbox/${app.getVersion()} (+https://github.com/Invertee/Scanbox)`
     },
     signal: AbortSignal.timeout(10000)
   });

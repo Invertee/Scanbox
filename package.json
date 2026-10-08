@@ -1,5 +1,5 @@
 {
-  "name": "scanbox-photo-studio",
+  "name": "scanbox",
   "version": "1.0.0",
   "description": "A Windows desktop app for scanning and batch cropping family photos",
   "main": "main.js",
@@ -18,13 +18,13 @@
   },
   "build": {
     "appId": "studio.scanbox.photos",
-    "productName": "Scanbox Photo Studio",
+    "productName": "Scanbox",
     "asar": true,
     "win": {
       "target": [
         "nsis"
       ],
-      "artifactName": "Scanbox-Photo-Studio-Setup-${version}.${ext}"
+      "artifactName": "Scanbox-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,

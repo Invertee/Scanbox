@@ -1,6 +1,6 @@
-# Scanbox Photo Studio
+# Scanbox
 
-![Scanbox Photo Studio](https://raw.githubusercontent.com/Invertee/Scanbox/main/box.png)
+![Scanbox](https://raw.githubusercontent.com/Invertee/Scanbox/main/box.png)
 
 An Electron desktop app and static browser app for separating several prints from an image, reviewing crop boxes, and exporting individual JPEGs. The Electron app can scan directly from an A4 flatbed and write EXIF dates and GPS coordinates.
 
@@ -38,13 +38,11 @@ npm install
 npm run dist
 ```
 
-The interactive NSIS installer is created in `dist/` with a name like `Scanbox-Photo-Studio-Setup-1.0.0.exe`; the version comes from `package.json`. Run that `.exe` to install the app. The installer offers an install location and creates Start Menu and desktop shortcuts.
+The interactive NSIS installer is created in `dist/` with a name like `Scanbox-Setup-1.0.0.exe`; the version comes from `package.json`. Run that `.exe` to install the app. The installer offers an install location and creates Start Menu and desktop shortcuts.
 
 NAPS2 is installed separately and is not bundled in this installer. Install it on each PC that will use a scanner; importing existing images does not require it.
 
 ## Run in a browser or on GitHub Pages
-
-The browser version detects that it is outside Electron automatically. The [Pages workflow](.github/workflows/pages.yml) publishes the required static files whenever changes are pushed to `main`, or when run manually from the Actions tab. To enable it, open the repository’s **Settings → Pages** and set **Build and deployment → Source** to **GitHub Actions**.
 
 In browser mode, the scanner sidebar and **Scan A4 page** control are hidden. Choose **Import an image** to open a JPEG, PNG, WebP, or BMP from your device. Cropping and photo detection run in the browser, and **Save selected photos** downloads the selected crops as JPEG files with date, GPS, and resolution EXIF metadata. Images are not uploaded by the app. Browser preferences are stored in that browser’s local storage.
 

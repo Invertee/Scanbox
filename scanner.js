@@ -15,7 +15,7 @@ function resolveCli() {
 function runCli(args, timeoutMs = 45000) {
   const cli = resolveCli();
   if (!cli) {
-    throw new Error('NAPS2 was not found. Install NAPS2, then restart Scanbox Photo Studio. See Scanner setup for the download.');
+    throw new Error('NAPS2 was not found. Install NAPS2, then restart Scanbox. See Scanner setup for the download.');
   }
   return new Promise((resolve, reject) => {
     const processHandle = spawn(cli, args, { windowsHide: true, shell: false });
