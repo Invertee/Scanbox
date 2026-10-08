@@ -143,3 +143,14 @@ body.browser-mode { min-width:320px; }
   .date-mode-label { flex-basis:127px; width:127px; }
 }
 .photo-info span { font-size:10.1px; }
+
+@media (min-width:981px) {
+  .browser-mode .meta-toolbar { flex-wrap:nowrap; justify-content:space-between; }
+  .browser-mode .meta-heading { flex:0 0 auto; min-width:180px; justify-content:flex-start; text-align:left; }
+  .browser-mode .meta-toolbar .meta-inputs { flex:0 1 auto; flex-wrap:nowrap; justify-content:flex-end; }
+}
+@media (max-width:980px) {
+  .browser-mode .meta-toolbar { flex-wrap:wrap; justify-content:flex-start; }
+  .browser-mode .meta-heading { flex:1 1 100%; justify-content:flex-start; text-align:left; }
+  .browser-mode .meta-toolbar .meta-inputs { flex:1 1 100%; justify-content:center; }
+}
