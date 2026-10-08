@@ -45,5 +45,6 @@ NAPS2 is installed separately and is not bundled in this installer. Install it o
 ## Notes
 
 - Images are read, cropped, and written on the local PC. EXIF dates are stored at midnight because the selector records a date without a time.
-- The map fetches visible map tiles from OpenStreetMap and shows the required contributor attribution. Map use requires an internet connection.
+- The map fetches visible map tiles from OpenStreetMap and searches places with OpenStreetMap Nominatim when you submit a search. Search queries are cached in memory for 24 hours; set `SCANBOX_MAP_SEARCH_URL` to use a compatible search service instead. Map use requires an internet connection.
+- The last photo date and location are saved in Scanbox's local preferences and restored when the app opens.
 - A scanner and NAPS2 are not required for the import-image workflow.

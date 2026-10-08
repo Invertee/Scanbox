@@ -8,9 +8,15 @@ const { listDevices, scanA4 } = require('./scanner');
 const { findPhotoRegions } = require('./cropper');
 
 const batches = new Map();
+const mapSearchCache = new Map();
 let activeBatchId = null;
 let isCleaningUp = false;
 let lastOutputDirectory = '';
+let nextMapSearchAt = 0;
+let lastPhotoDate = { day: '', month: '', year: '' };
+let lastPhotoBirthday = { enabled: false, dateOfBirth: '', age: '' };
+let lastPhotoLocation = null;
+let preferenceWrites = Promise.resolve();
 
 function preferencesPath() {
   return path.join(app.getPath('userData'), 'preferences.json');
@@ -20,13 +26,42 @@ async function loadPreferences() {
   try {
     const preferences = JSON.parse(await fs.readFile(preferencesPath(), 'utf8'));
     if (typeof preferences.lastOutputDirectory === 'string') lastOutputDirectory = preferences.lastOutputDirectory;
+    lastPhotoDate = normalizePhotoDate(preferences.photoDate);
+    lastPhotoBirthday = normalizePhotoBirthday(preferences.photoBirthday);
+    lastPhotoLocation = normalizePhotoLocation(preferences.photoLocation);
   } catch { /* First launch or unreadable preferences: use defaults. */ }
 }
 
-async function savePreferences() {
+function savePreferences() {
   const filePath = preferencesPath();
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify({ lastOutputDirectory }, null, 2), 'utf8');
+  const contents = JSON.stringify({ lastOutputDirectory, photoDate: lastPhotoDate, photoBirthday: lastPhotoBirthday, photoLocation: lastPhotoLocation }, null, 2);
+  preferenceWrites = preferenceWrites.catch(() => {}).then(async () => {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, contents, 'utf8');
+  });
+  return preferenceWrites;
+}
+
+function normalizePhotoDate(value) {
+  const part = (key, maxLength) => String(value?.[key] ?? '').replace(/\D/g, '').slice(0, maxLength);
+  return { day: part('day', 2), month: part('month', 2), year: part('year', 4) };
+}
+
+function normalizePhotoBirthday(value) {
+  const dateOfBirth = typeof value?.dateOfBirth === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.dateOfBirth)
+    && !Number.isNaN(Date.parse(`${value.dateOfBirth}T00:00:00.000Z`))
+    && new Date(`${value.dateOfBirth}T00:00:00.000Z`).toISOString().slice(0, 10) === value.dateOfBirth
+    ? value.dateOfBirth : '';
+  const age = String(value?.age ?? '').trim();
+  return { enabled: value?.enabled === true, dateOfBirth, age: /^\d{1,3}$/.test(age) && Number(age) <= 120 ? age : '' };
+}
+
+function normalizePhotoLocation(value) {
+  if (!value || typeof value !== 'object') return null;
+  const latitude = Number(value.latitude);
+  const longitude = Number(value.longitude);
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return null;
+  return { latitude, longitude };
 }
 
 function sanitizeFilePrefix(value) {
@@ -102,7 +137,7 @@ function assertTrustedSender(event) {
   }
 }
 
-async function getPreviewAndCrops(imagePath, threshold = 242, padding = 0.025) {
+async function getPreviewAndCrops(imagePath, threshold = 242, padding = 0.025, detectPhotos = true) {
   const metadata = await sharp(imagePath, { limitInputPixels: 160_000_000 }).metadata();
   if (!metadata.width || !metadata.height) throw new Error('This image could not be read.');
   const orientationSwapsDimensions = [5, 6, 7, 8].includes(metadata.orientation);
@@ -113,15 +148,24 @@ async function getPreviewAndCrops(imagePath, threshold = 242, padding = 0.025) {
     .resize({ width: Math.min(1600, width), withoutEnlargement: true })
     .jpeg({ quality: 78 })
     .toBuffer({ resolveWithObject: true });
-  const page = await sharp(imagePath, { limitInputPixels: 160_000_000 })
-    .rotate()
-    .resize({ width: 1400, withoutEnlargement: true })
-    .greyscale()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const regions = findPhotoRegions(page.data, page.info.width, page.info.height, Number(threshold), Number(padding));
-  const scaleX = width / page.info.width;
-  const scaleY = height / page.info.height;
+  let regions = [];
+  let scaleX = 1;
+  let scaleY = 1;
+  let detectionWidth = width;
+  let detectionHeight = height;
+  if (detectPhotos) {
+    const page = await sharp(imagePath, { limitInputPixels: 160_000_000 })
+      .rotate()
+      .resize({ width: 1400, withoutEnlargement: true })
+      .greyscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    regions = findPhotoRegions(page.data, page.info.width, page.info.height, Number(threshold), Number(padding));
+    detectionWidth = page.info.width;
+    detectionHeight = page.info.height;
+    scaleX = width / page.info.width;
+    scaleY = height / page.info.height;
+  }
   const imageData = `data:image/jpeg;base64,${preview.data.toString('base64')}`;
   return {
     imageData,
@@ -136,7 +180,8 @@ async function getPreviewAndCrops(imagePath, threshold = 242, padding = 0.025) {
       y: Math.max(0, Math.round(rect.y * scaleY)),
       width: Math.min(width, Math.round(rect.width * scaleX)),
       height: Math.min(height, Math.round(rect.height * scaleY)),
-      selected: rect.width < page.info.width * 0.98 && rect.height < page.info.height * 0.98,
+      source: 'detected',
+      selected: rect.width < detectionWidth * 0.98 && rect.height < detectionHeight * 0.98,
       date: null,
       latitude: null,
       longitude: null
@@ -144,8 +189,8 @@ async function getPreviewAndCrops(imagePath, threshold = 242, padding = 0.025) {
   };
 }
 
-async function prepareBatch(imagePath, sourceName, threshold, padding, dpi) {
-  const processed = await getPreviewAndCrops(imagePath, threshold, padding);
+async function prepareBatch(imagePath, sourceName, threshold, padding, dpi, detectPhotos = true) {
+  const processed = await getPreviewAndCrops(imagePath, threshold, padding, detectPhotos);
   if (Number.isFinite(Number(dpi)) && Number(dpi) > 0) processed.dpi = Number(dpi);
   const oldBatch = activeBatchId ? batches.get(activeBatchId) : null;
   if (activeBatchId) batches.delete(activeBatchId);
@@ -171,6 +216,46 @@ function requireBatch(batchId) {
   const batch = batches.get(batchId);
   if (!batch) throw new Error('This scan session has expired. Load the image again.');
   return batch;
+}
+
+async function searchMapPlaces(query) {
+  const normalizedQuery = String(query || '').trim().replace(/\s+/g, ' ');
+  if (!normalizedQuery || normalizedQuery.length > 200) throw new Error('Enter a place name or address to search.');
+  const cacheKey = normalizedQuery.toLocaleLowerCase('en-GB');
+  const cached = mapSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < 24 * 60 * 60 * 1000) return cached.results;
+
+  const requestAt = Math.max(Date.now(), nextMapSearchAt);
+  nextMapSearchAt = requestAt + 1100;
+  const delay = requestAt - Date.now();
+  if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+
+  const endpoint = process.env.SCANBOX_MAP_SEARCH_URL || 'https://nominatim.openstreetmap.org/search';
+  const url = new URL(endpoint);
+  url.searchParams.set('q', normalizedQuery);
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('limit', '6');
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': `Scanbox-Photo-Studio/${app.getVersion()} (+https://github.com/Invertee/Scanbox)`
+    },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) throw new Error(`Place search failed (HTTP ${response.status}).`);
+  const data = await response.json();
+  if (!Array.isArray(data)) throw new Error('Place search returned an invalid response.');
+  const results = data.slice(0, 6).map((place) => ({
+    latitude: Number(place.lat),
+    longitude: Number(place.lon),
+    name: String(place.name || place.display_name || 'Unnamed place'),
+    label: String(place.display_name || place.name || 'Unnamed place'),
+    type: String(place.type || '')
+  })).filter((place) => Number.isFinite(place.latitude) && Number.isFinite(place.longitude)
+    && place.latitude >= -90 && place.latitude <= 90 && place.longitude >= -180 && place.longitude <= 180);
+  mapSearchCache.set(cacheKey, { cachedAt: Date.now(), results });
+  if (mapSearchCache.size > 100) mapSearchCache.delete(mapSearchCache.keys().next().value);
+  return results;
 }
 
 function validDate(value) {
@@ -206,7 +291,7 @@ function registerIpc() {
     const outputPath = path.join(os.tmpdir(), `scanbox-${crypto.randomUUID()}.tif`);
     try {
       const result = await scanA4({ ...options, outputPath });
-      const batch = await prepareBatch(outputPath, result.deviceName || 'Flatbed scan', options.threshold, options.padding, options.dpi);
+      const batch = await prepareBatch(outputPath, result.deviceName || 'Flatbed scan', options.threshold, options.padding, options.dpi, options.detectPhotos !== false);
       batch.scannerName = result.deviceName;
       return batch;
     } catch (error) {
@@ -214,7 +299,7 @@ function registerIpc() {
       throw error;
     }
   });
-  ipcMain.handle('image:choose', async (event) => {
+  ipcMain.handle('image:choose', async (event, options = {}) => {
     assertTrustedSender(event);
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
       title: 'Choose a flatbed scan to crop',
@@ -222,7 +307,7 @@ function registerIpc() {
       filters: [{ name: 'Scanned images', extensions: ['jpg', 'jpeg', 'png', 'tif', 'tiff', 'bmp', 'webp'] }]
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    return prepareBatch(result.filePaths[0], path.basename(result.filePaths[0]));
+    return prepareBatch(result.filePaths[0], path.basename(result.filePaths[0]), undefined, undefined, undefined, options.detectPhotos !== false);
   });
   ipcMain.handle('batch:redetect', async (event, { batchId, threshold, padding }) => {
     assertTrustedSender(event);
@@ -246,6 +331,19 @@ function registerIpc() {
   ipcMain.handle('folder:last-used', async (event) => {
     assertTrustedSender(event);
     return lastOutputDirectory;
+  });
+  ipcMain.handle('photo-details:last-used', async (event) => {
+    assertTrustedSender(event);
+    return { date: { ...lastPhotoDate }, birthday: { ...lastPhotoBirthday }, location: lastPhotoLocation ? { ...lastPhotoLocation } : null };
+  });
+  ipcMain.handle('photo-details:save', async (event, details = {}) => {
+    assertTrustedSender(event);
+    const updates = details && typeof details === 'object' ? details : {};
+    if (Object.prototype.hasOwnProperty.call(updates, 'date')) lastPhotoDate = normalizePhotoDate(updates.date);
+    if (Object.prototype.hasOwnProperty.call(updates, 'birthday')) lastPhotoBirthday = normalizePhotoBirthday(updates.birthday);
+    if (Object.prototype.hasOwnProperty.call(updates, 'location')) lastPhotoLocation = normalizePhotoLocation(updates.location);
+    await savePreferences();
+    return { date: { ...lastPhotoDate }, birthday: { ...lastPhotoBirthday }, location: lastPhotoLocation ? { ...lastPhotoLocation } : null };
   });
   ipcMain.handle('folder:next-number', async (event, { outputDirectory, prefix }) => {
     assertTrustedSender(event);
@@ -351,6 +449,10 @@ function registerIpc() {
   ipcMain.handle('app:open-map-credits', async (event) => {
     assertTrustedSender(event);
     await shell.openExternal('https://www.openstreetmap.org/copyright');
+  });
+  ipcMain.handle('map:search', async (event, query) => {
+    assertTrustedSender(event);
+    return searchMapPlaces(query);
   });
 }
 

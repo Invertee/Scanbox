@@ -1,16 +1,19 @@
-const state = { batch: null, devices: [], outputDirectory: '', place: null, map: null, marker: null, pendingPlace: null, manualId: 0, drawing: null, rotating: null, moving: null, panning: null, zoom: 1, panX: 0, panY: 0, toastTimer: null, busy: false, numberLookupId: 0 };
+const state = { batch: null, devices: [], outputDirectory: '', place: null, map: null, marker: null, pendingPlace: null, mapSearchRequest: 0, manualId: 0, drawing: null, rotating: null, moving: null, resizing: null, panning: null, zoom: 1, panX: 0, panY: 0, toastTimer: null, busy: false, photoDetectionEnabled: true, birthdayMode: false, numberLookupId: 0 };
 const $ = (id) => document.getElementById(id);
 const elements = {
   scannerName: $('sidebarScannerName'), scannerDriver: $('sidebarScannerDriver'), scannerDot: $('scannerStatusDot'),
   driver: $('driverSelect'), device: $('deviceSelect'), dpi: $('dpiSelect'), scan: $('scanBtn'), scanDetail: $('scanButtonDetail'),
   import: $('importBtn'), emptyImport: $('emptyImportBtn'), refresh: $('refreshScanners'), setup: $('setupBtn'),
-  empty: $('emptyPreview'), canvasWrap: $('canvasWrap'), canvas: $('scanCanvas'), stage: $('previewStage'),
+  empty: $('emptyPreview'), canvasWrap: $('canvasWrap'), canvas: $('scanCanvas'), stage: $('previewStage'), metaToolbar: document.querySelector('.meta-toolbar'),
   overlay: $('processingOverlay'), processingTitle: $('processingTitle'), processingDetail: $('processingDetail'), subtitle: $('previewSubtitle'),
-  detected: $('detectedPill'), redetect: $('redetectBtn'), list: $('photoList'), selectionSummary: $('selectionSummary'),
-  selectAll: $('selectAllBtn'), dateDay: $('dateDayInput'), dateMonth: $('dateMonthInput'), dateYear: $('dateYearInput'), placeSummary: $('placeSummary'), mapOpen: $('mapOpenBtn'),
+  detected: $('detectedPill'), detectionToggle: $('detectionToggle'), redetect: $('redetectBtn'), list: $('photoList'), selectionSummary: $('selectionSummary'),
+  selectAll: $('selectAllBtn'), dateDay: $('dateDayInput'), dateMonth: $('dateMonthInput'), dateYear: $('dateYearInput'),
+  birthdayModeToggle: $('birthdayModeToggle'), dateModeLabel: $('dateModeLabel'), birthdayAgeLabel: $('birthdayAgeLabel'), simpleDateFields: $('simpleDateFields'), birthdayAge: $('birthdayAgeInput'), dateInputWrap: $('dateInputWrap'), placeSummary: $('placeSummary'), mapOpen: $('mapOpenBtn'),
   folder: $('folderSummary'), chooseFolder: $('chooseFolderBtn'), save: $('saveBtn'),
   prefix: $('filenamePrefix'), start: $('startNumber'), toast: $('toast'), mapModal: $('mapModal'), map: $('map'),
   closeMap: $('closeMapBtn'), coordinateText: $('coordinateText'), confirmPlace: $('confirmLocationBtn'), clearPlace: $('clearLocationBtn'),
+  mapSearch: $('mapSearch'), mapSearchForm: $('mapSearchForm'), mapSearchInput: $('mapSearchInput'), mapSearchButton: $('mapSearchButton'),
+  mapSearchResults: $('mapSearchResults'), mapSearchStatus: $('mapSearchStatus'),
   sensitivity: $('sensitivity'), sensitivityValue: $('sensitivityValue')
 };
 
@@ -34,15 +37,108 @@ function setBusy(busy, title = 'Reading your page…', detail = 'This can take a
 
 function selectedPhotos() { return state.batch?.crops.filter((photo) => photo.selected) || []; }
 
-function selectedPhotoDate() {
+function validIsoPhotoDate(isoDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return false;
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === isoDate;
+}
+
+function datePickerPhotoDate() {
   const parts = [elements.dateDay.value.trim(), elements.dateMonth.value.trim(), elements.dateYear.value.trim()];
   if (parts.every((part) => part === '')) return null;
   if (!/^\d{1,2}$/.test(parts[0]) || !/^\d{1,2}$/.test(parts[1]) || !/^\d{4}$/.test(parts[2])) return undefined;
   const [day, month, year] = parts.map(Number);
   if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1) return undefined;
   const isoDate = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  const parsedDate = new Date(`${isoDate}T00:00:00Z`);
-  return Number.isNaN(parsedDate.valueOf()) || parsedDate.toISOString().slice(0, 10) !== isoDate ? undefined : isoDate;
+  return validIsoPhotoDate(isoDate) ? isoDate : undefined;
+}
+
+function birthdayPhotoDate() {
+  const dateOfBirth = datePickerPhotoDate();
+  const ageText = elements.birthdayAge.value.trim();
+  if (dateOfBirth === null && !ageText) return null;
+  if (!dateOfBirth || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(ageText)) return undefined;
+  const today = new Date();
+  const todayIso = `${String(today.getFullYear()).padStart(4, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  if (dateOfBirth > todayIso) return undefined;
+  const age = Number(ageText);
+  if (!Number.isFinite(age) || age < 0 || age > 120) return undefined;
+  const [birthYear, month, day] = dateOfBirth.split('-').map(Number);
+  const anniversaryDate = (yearsAfterBirth) => {
+    const year = birthYear + yearsAfterBirth;
+    if (year > 9999) return null;
+    const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const anniversaryDay = Math.min(day, daysInMonth[month - 1]);
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(anniversaryDay).padStart(2, '0')}`;
+  };
+  const wholeYears = Math.floor(age);
+  const birthdayAtWholeAge = anniversaryDate(wholeYears);
+  if (!birthdayAtWholeAge) return undefined;
+  const fraction = age - wholeYears;
+  if (fraction === 0) return birthdayAtWholeAge;
+  const birthdayNextYear = anniversaryDate(wholeYears + 1);
+  if (!birthdayNextYear) return undefined;
+  const startTime = new Date(`${birthdayAtWholeAge}T00:00:00Z`).getTime();
+  const nextTime = new Date(`${birthdayNextYear}T00:00:00Z`).getTime();
+  const estimatedPhotoTime = startTime + Math.round((nextTime - startTime) * fraction);
+  return new Date(estimatedPhotoTime).toISOString().slice(0, 10);
+}
+
+function updateDateMode() {
+  elements.dateInputWrap.classList.toggle('birthday-mode', state.birthdayMode);
+  elements.metaToolbar.classList.toggle('birthday-mode', state.birthdayMode);
+  elements.birthdayModeToggle.setAttribute('aria-pressed', String(state.birthdayMode));
+  elements.dateModeLabel.textContent = state.birthdayMode ? 'DATE OF BIRTH' : 'PHOTO DATE';
+  elements.simpleDateFields.setAttribute('aria-label', `${state.birthdayMode ? 'Date of birth' : 'Photo date'}, day month year`);
+  elements.birthdayAgeLabel.classList.toggle('hidden', !state.birthdayMode);
+  elements.birthdayAge.classList.toggle('hidden', !state.birthdayMode);
+}
+
+function selectedPhotoDate() {
+  if (state.birthdayMode) return birthdayPhotoDate();
+  return datePickerPhotoDate();
+}
+
+function formatPhotoDateLabel(date) {
+  if (!date) return 'date not set';
+  const [year, month, day] = date.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function photoSummaryText(crop, selectedDate) {
+  const dateToApply = crop.selected && selectedDate !== null ? selectedDate : crop.date;
+  const dateLabel = crop.selected && selectedDate === undefined ? 'invalid date' : formatPhotoDateLabel(dateToApply);
+  return `${Math.round(crop.width / state.batch.width * 100)}% page width · ${dateLabel}`;
+}
+
+function persistPhotoDetails({ date = !state.birthdayMode, birthday = false, location = true } = {}) {
+  const details = {};
+  if (date) details.date = { day: elements.dateDay.value, month: elements.dateMonth.value, year: elements.dateYear.value };
+  if (birthday) details.birthday = { enabled: state.birthdayMode, dateOfBirth: datePickerPhotoDate() || '', age: elements.birthdayAge.value };
+  if (location) details.location = state.place;
+  window.scanbox.savePhotoDetails(details).catch((error) => showToast(error.message || 'Could not save the photo details.', true));
+}
+
+async function restorePhotoDetails() {
+  try {
+    const details = await window.scanbox.getLastPhotoDetails();
+    elements.dateDay.value = details.date?.day || '';
+    elements.dateMonth.value = details.date?.month || '';
+    elements.dateYear.value = details.date?.year || '';
+    state.birthdayMode = details.birthday?.enabled === true;
+    if (state.birthdayMode && details.birthday?.dateOfBirth) {
+      const [year, month, day] = details.birthday.dateOfBirth.split('-');
+      elements.dateDay.value = day || '';
+      elements.dateMonth.value = month || '';
+      elements.dateYear.value = year || '';
+    }
+    elements.birthdayAge.value = details.birthday?.age || '';
+    updateDateMode();
+    state.place = details.location || null;
+    elements.placeSummary.textContent = state.place ? formatCoordinate(state.place) : 'No location selected';
+    renderPhotoList();
+  } catch { /* Keep blank defaults if preferences are unavailable. */ }
 }
 
 function updatePhotoCount() {
@@ -54,7 +150,11 @@ function updatePhotoCount() {
   elements.selectAll.classList.toggle('hidden', count === 0);
   elements.selectAll.textContent = selected === count ? 'Deselect all' : 'Select all';
   elements.save.disabled = state.busy || !count || selected === 0 || !state.outputDirectory;
-  elements.redetect.disabled = state.busy || !state.batch;
+  elements.detectionToggle.disabled = state.busy || !state.batch;
+  elements.detectionToggle.setAttribute('aria-pressed', String(state.photoDetectionEnabled));
+  elements.detectionToggle.setAttribute('aria-label', `Photo detection ${state.photoDetectionEnabled ? 'on' : 'off'}`);
+  elements.detectionToggle.lastElementChild.textContent = `Detection ${state.photoDetectionEnabled ? 'on' : 'off'}`;
+  elements.redetect.disabled = state.busy || !state.batch || !state.photoDetectionEnabled;
 }
 
 function previewBounds(crop) {
@@ -83,6 +183,27 @@ function cropHandlePoint(crop, action = 'rotate') {
   const inset = radius + 2;
   const clampToCanvas = (value, size) => Math.max(Math.min(inset, size / 2), Math.min(Math.max(size - inset, size / 2), value));
   return { x: clampToCanvas(x, state.batch.previewWidth), y: clampToCanvas(y, state.batch.previewHeight) };
+}
+
+const cropCorners = {
+  topLeft: { x: -1, y: -1 },
+  topRight: { x: 1, y: -1 },
+  bottomRight: { x: 1, y: 1 },
+  bottomLeft: { x: -1, y: 1 }
+};
+
+function cropCornerPoint(crop, corner) {
+  const box = previewBounds(crop);
+  const { x: signX, y: signY } = cropCorners[corner];
+  const centerX = box.x + box.width / 2;
+  const centerY = box.y + box.height / 2;
+  const angle = cropRotation(crop) * Math.PI / 180;
+  const localX = signX * box.width / 2;
+  const localY = signY * box.height / 2;
+  return {
+    x: centerX + localX * Math.cos(angle) - localY * Math.sin(angle),
+    y: centerY + localX * Math.sin(angle) + localY * Math.cos(angle)
+  };
 }
 
 function clampPreviewPan() {
@@ -138,7 +259,7 @@ function paintCanvas() {
     ctx.fillStyle = crop.selected ? '#38784f' : '#68736a';
     ctx.fillRect(-box.width / 2, -box.height / 2, badgeW, badgeH);
     ctx.fillStyle = '#fff';
-    ctx.font = `600 ${Math.max(10, canvas.width / 105)}px Segoe UI, sans-serif`;
+    ctx.font = `600 ${Math.max(12, canvas.width / 87.5)}px Segoe UI, sans-serif`;
     ctx.fillText(String(index + 1).padStart(2, '0'), -box.width / 2 + badgeW * .22, -box.height / 2 + badgeH * .72);
     if (crop.selected) {
       const { radius } = handleDimensions();
@@ -186,6 +307,15 @@ function paintCanvas() {
       ctx.moveTo(moveHandleX, moveHandleY - radius * .52); ctx.lineTo(moveHandleX - radius * .2, moveHandleY - radius * .22); ctx.lineTo(moveHandleX + radius * .2, moveHandleY - radius * .22); ctx.fill();
       ctx.beginPath();
       ctx.moveTo(moveHandleX, moveHandleY + radius * .52); ctx.lineTo(moveHandleX - radius * .2, moveHandleY + radius * .22); ctx.lineTo(moveHandleX + radius * .2, moveHandleY + radius * .22); ctx.fill();
+
+      const cornerSize = radius * 1.35;
+      Object.values(cropCorners).forEach(({ x, y }) => {
+        ctx.fillStyle = '#fff';
+        ctx.strokeStyle = '#38784f';
+        ctx.lineWidth = Math.max(1.5, radius * .24);
+        ctx.fillRect(x * box.width / 2 - cornerSize / 2, y * box.height / 2 - cornerSize / 2, cornerSize, cornerSize);
+        ctx.strokeRect(x * box.width / 2 - cornerSize / 2, y * box.height / 2 - cornerSize / 2, cornerSize, cornerSize);
+      });
     }
     ctx.restore();
   });
@@ -210,6 +340,7 @@ function drawThumb(canvas, crop) {
 
 function renderPhotoList() {
   const crops = state.batch?.crops || [];
+  const selectedDate = selectedPhotoDate();
   if (!crops.length) {
     elements.list.innerHTML = '<div class="photo-list-empty"><div class="empty-stack">▱</div><strong>Your crops will show up here</strong><span>Each photo is ready to review before saving.</span></div>';
     updatePhotoCount();
@@ -223,12 +354,19 @@ function renderPhotoList() {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox'; checkbox.className = 'photo-check'; checkbox.checked = crop.selected;
     checkbox.setAttribute('aria-label', `Select photo ${index + 1}`);
-    checkbox.addEventListener('change', () => { crop.selected = checkbox.checked; item.classList.toggle('active', crop.selected); updatePhotoCount(); paintCanvas(); });
     const thumb = document.createElement('div'); thumb.className = 'photo-thumb';
     const thumbCanvas = document.createElement('canvas'); thumbCanvas.width = 180; thumbCanvas.height = 128; thumb.append(thumbCanvas); drawThumb(thumbCanvas, crop);
     const info = document.createElement('div'); info.className = 'photo-info';
     const title = document.createElement('strong'); title.textContent = `Photo ${String(index + 1).padStart(2, '0')}`;
-    const dimensions = document.createElement('span'); dimensions.textContent = `${Math.round(crop.width / state.batch.width * 100)}% page width · ${crop.date ? 'date added' : 'date not set'}`;
+    const dimensions = document.createElement('span');
+    dimensions.textContent = photoSummaryText(crop, selectedDate);
+    checkbox.addEventListener('change', () => {
+      crop.selected = checkbox.checked;
+      item.classList.toggle('active', crop.selected);
+      dimensions.textContent = photoSummaryText(crop, selectedDate);
+      updatePhotoCount();
+      paintCanvas();
+    });
     info.append(title, dimensions);
     const remove = document.createElement('button'); remove.className = 'photo-more'; remove.textContent = '×'; remove.title = 'Remove this crop';
     remove.addEventListener('click', () => { state.batch.crops = state.batch.crops.filter((itemCrop) => itemCrop.id !== crop.id); renderPhotoList(); });
@@ -241,12 +379,13 @@ function setBatch(batch) {
   if (!batch) return;
   const image = new Image();
   image.onload = () => {
-    state.batch = { ...batch, previewImage: image, crops: batch.crops || [] };
+    state.batch = { ...batch, previewImage: image,
+      crops: (batch.crops || []).filter((crop) => state.photoDetectionEnabled || (crop.source !== 'detected' && !crop.id.startsWith('crop-'))) };
     state.zoom = 1; state.panX = 0; state.panY = 0;
-    elements.empty.classList.add('hidden'); elements.canvasWrap.classList.remove('hidden'); elements.redetect.disabled = false;
+    elements.empty.classList.add('hidden'); elements.canvasWrap.classList.remove('hidden');
     elements.subtitle.textContent = `${batch.sourceName || 'Flatbed image'} · ${batch.width.toLocaleString()} × ${batch.height.toLocaleString()} px`;
     renderPhotoList();
-    if (!state.batch.crops.length) showToast('No photos were detected. Try a cleaner scan or drag to add a crop.');
+    if (!state.batch.crops.length && state.photoDetectionEnabled) showToast('No photos were detected. Try a cleaner scan or drag to add a crop.');
   };
   image.onerror = () => showToast('The image preview could not be loaded.', true);
   image.src = batch.imageData;
@@ -303,27 +442,47 @@ async function runScan() {
   if (!elements.device.value) { showToast('Choose a scanner first, or import an image to try the cropper.', true); return; }
   setBusy(true, 'Scanning your A4 page…', `${elements.dpi.value} DPI · colour · flatbed`);
   try {
-    const batch = await window.scanbox.scan({ driver: elements.driver.value, device: elements.device.value, dpi: Number(elements.dpi.value), threshold: 242, padding: .025 });
+    const batch = await window.scanbox.scan({ driver: elements.driver.value, device: elements.device.value, dpi: Number(elements.dpi.value), threshold: 242, padding: .025,
+      detectPhotos: state.photoDetectionEnabled });
     setBatch(batch);
   } catch (error) { showToast(error.message || 'The scan did not complete.', true); }
   finally { setBusy(false); }
 }
 
 async function importImage() {
-  setBusy(true, 'Preparing your image…', 'Finding photos against the scanner background');
-  try { const batch = await window.scanbox.chooseImage(); if (batch) setBatch(batch); }
+  setBusy(true, 'Preparing your image…', state.photoDetectionEnabled ? 'Finding photos against the scanner background' : 'Loading the image without photo detection');
+  try { const batch = await window.scanbox.chooseImage({ detectPhotos: state.photoDetectionEnabled }); if (batch) setBatch(batch); }
   catch (error) { showToast(error.message || 'The image could not be opened.', true); }
   finally { setBusy(false); }
 }
 
 async function redetect() {
-  if (!state.batch) return;
+  if (!state.batch || !state.photoDetectionEnabled) return false;
+  const manualCrops = state.batch.crops.filter((crop) => crop.source === 'manual' || crop.id.startsWith('manual-'));
   setBusy(true, 'Finding photo edges…', 'Re-running the photo separation');
   try {
     const response = await window.scanbox.redetect({ batchId: state.batch.batchId, threshold: Number(elements.sensitivity.value), padding: .025 });
-    setBatch(response);
-  } catch (error) { showToast(error.message || 'Could not re-detect the photo edges.', true); }
+    setBatch({ ...response, crops: [...(response.crops || []), ...manualCrops] });
+    return true;
+  } catch (error) { showToast(error.message || 'Could not re-detect the photo edges.', true); return false; }
   finally { setBusy(false); }
+}
+
+async function togglePhotoDetection() {
+  if (!state.batch || state.busy) return;
+  if (state.photoDetectionEnabled) {
+    state.photoDetectionEnabled = false;
+    state.batch.crops = state.batch.crops.filter((crop) => crop.source !== 'detected' && !crop.id.startsWith('crop-'));
+    renderPhotoList();
+    showToast('Photo detection is off. You can still add crops manually.');
+    return;
+  }
+  state.photoDetectionEnabled = true;
+  updatePhotoCount();
+  if (!await redetect()) {
+    state.photoDetectionEnabled = false;
+    updatePhotoCount();
+  }
 }
 
 async function chooseFolder() {
@@ -378,7 +537,10 @@ function applyFilledMetadata(date) {
 async function savePhotos() {
   if (!state.batch || !state.outputDirectory) return;
   const date = selectedPhotoDate();
-  if (date === undefined) { showToast('Enter a valid date in DD / MM / YYYY format.', true); return; }
+  if (date === undefined) {
+    showToast(state.birthdayMode ? 'Enter a valid birthday and an age from 0 to 120.' : 'Enter a valid date in DD / MM / YYYY format.', true);
+    return;
+  }
   applyFilledMetadata(date);
   const photos = selectedPhotos().map((photo) => ({
     id: photo.id, x: photo.x, y: photo.y, width: photo.width, height: photo.height, rotation: cropRotation(photo),
@@ -407,11 +569,73 @@ function syncMapMarker(point) {
 
 function formatCoordinate(point) { return `${point.latitude.toFixed(5)}, ${point.longitude.toFixed(5)}`; }
 
+function selectMapSearchResult(place) {
+  const point = { latitude: place.latitude, longitude: place.longitude };
+  state.pendingPlace = point;
+  state.map.setView([point.latitude, point.longitude], Math.max(state.map.getZoom(), 14));
+  syncMapMarker(point);
+  elements.coordinateText.textContent = formatCoordinate(point);
+  elements.confirmPlace.disabled = false;
+  elements.mapSearchResults.classList.add('hidden');
+  elements.mapSearchStatus.textContent = `${place.name} selected on the map`;
+}
+
+function renderMapSearchResults(results) {
+  elements.mapSearchResults.replaceChildren();
+  if (!results.length) {
+    elements.mapSearchResults.classList.add('hidden');
+    elements.mapSearchStatus.textContent = 'No places found. Try a nearby town or a fuller address.';
+    return;
+  }
+  for (const place of results) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'map-search-result';
+    const name = document.createElement('strong');
+    name.textContent = place.name;
+    const label = document.createElement('span');
+    label.textContent = place.label;
+    button.append(name, label);
+    button.addEventListener('click', () => selectMapSearchResult(place));
+    elements.mapSearchResults.append(button);
+  }
+  elements.mapSearchResults.classList.remove('hidden');
+  elements.mapSearchStatus.textContent = `${results.length} ${results.length === 1 ? 'place' : 'places'} found. Select one to preview it on the map.`;
+}
+
+async function searchMapPlaces(event) {
+  event.preventDefault();
+  const query = elements.mapSearchInput.value.trim();
+  if (!query) {
+    elements.mapSearchStatus.textContent = 'Enter a place name or address to search.';
+    elements.mapSearchInput.focus();
+    return;
+  }
+  const requestId = ++state.mapSearchRequest;
+  elements.mapSearchButton.disabled = true;
+  elements.mapSearchResults.replaceChildren();
+  elements.mapSearchResults.classList.add('hidden');
+  elements.mapSearchStatus.textContent = 'Searching places…';
+  try {
+    const results = await window.scanbox.searchMapPlaces(query);
+    if (requestId === state.mapSearchRequest) renderMapSearchResults(results);
+  } catch (error) {
+    if (requestId === state.mapSearchRequest) elements.mapSearchStatus.textContent = error.message || 'Place search failed. Check your connection and try again.';
+  } finally {
+    if (requestId === state.mapSearchRequest) elements.mapSearchButton.disabled = false;
+  }
+}
+
 function openMap() {
   state.pendingPlace = state.place ? { ...state.place } : null;
   elements.mapModal.classList.remove('hidden');
+  elements.mapSearchResults.replaceChildren();
+  elements.mapSearchResults.classList.add('hidden');
+  elements.mapSearchStatus.textContent = 'Search for a place or address';
   if (!state.map) {
     state.map = L.map(elements.map, { zoomControl: true, scrollWheelZoom: true }).setView(state.place ? [state.place.latitude, state.place.longitude] : [53.6, -2.6], state.place ? 9 : 5);
+    L.DomEvent.disableClickPropagation(elements.mapSearch);
+    L.DomEvent.disableScrollPropagation(elements.mapSearch);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>' }).addTo(state.map);
     const creditsLink = elements.map.querySelector('.leaflet-control-attribution a');
@@ -419,6 +643,7 @@ function openMap() {
     state.map.on('click', (event) => {
       state.pendingPlace = { latitude: event.latlng.lat, longitude: event.latlng.lng };
       syncMapMarker(state.pendingPlace); elements.coordinateText.textContent = formatCoordinate(state.pendingPlace); elements.confirmPlace.disabled = false;
+      elements.mapSearchResults.classList.add('hidden');
     });
   }
   if (state.pendingPlace) {
@@ -432,12 +657,14 @@ function closeMap() { elements.mapModal.classList.add('hidden'); }
 function confirmLocation() {
   state.place = state.pendingPlace ? { ...state.pendingPlace } : null;
   elements.placeSummary.textContent = state.place ? formatCoordinate(state.place) : 'No location selected';
+  persistPhotoDetails({ date: false });
   closeMap();
   if (state.place) showToast('Location selected. It will be added to the selected photos when you save.');
 }
 function clearLocation() {
   state.pendingPlace = null; state.place = null; syncMapMarker(null);
   elements.coordinateText.textContent = 'No point selected'; elements.confirmPlace.disabled = true; elements.placeSummary.textContent = 'No location selected';
+  persistPhotoDetails({ date: false });
 }
 
 function eventToImagePoint(event, clampToImage = true) {
@@ -459,13 +686,17 @@ function cropAtHandle(clientX, clientY) {
   let nearestDistance = Infinity;
   [...state.batch.crops].reverse().forEach((crop) => {
     if (!crop.selected) return false;
-    for (const action of ['move', 'rotate']) {
-      const handle = cropHandlePoint(crop, action);
+    const handles = [
+      ...Object.keys(cropCorners).map((corner) => ({ action: 'resize', corner, point: cropCornerPoint(crop, corner) })),
+      ...['move', 'rotate'].map((action) => ({ action, point: cropHandlePoint(crop, action) }))
+    ];
+    for (const { action, corner, point } of handles) {
+      const handle = point;
       const screenX = canvasRect.left + handle.x / previewWidth * canvasRect.width;
       const screenY = canvasRect.top + handle.y / previewHeight * canvasRect.height;
       const distance = Math.hypot(clientX - screenX, clientY - screenY);
       if (distance <= hitRadius && distance < nearestDistance) {
-        nearest = { crop, action };
+        nearest = { crop, action, corner };
         nearestDistance = distance;
       }
     }
@@ -476,6 +707,52 @@ function cropAtHandle(clientX, clientY) {
 function moveCropTo(crop, x, y) {
   crop.x = Math.round(x);
   crop.y = Math.round(y);
+}
+
+function resizeCropFromCorner(crop, corner, point) {
+  const { x: signX, y: signY } = cropCorners[corner];
+  const angle = cropRotation(crop) * Math.PI / 180;
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  const centerX = crop.x + crop.width / 2;
+  const centerY = crop.y + crop.height / 2;
+  const anchorX = centerX + cosine * (-signX * crop.width / 2) - sine * (-signY * crop.height / 2);
+  const anchorY = centerY + sine * (-signX * crop.width / 2) + cosine * (-signY * crop.height / 2);
+  const dx = point.x - anchorX;
+  const dy = point.y - anchorY;
+  const localX = cosine * dx + sine * dy;
+  const localY = -sine * dx + cosine * dy;
+  const minWidth = Math.min(20, state.batch.width);
+  const minHeight = Math.min(20, state.batch.height);
+  const width = Math.round(Math.max(minWidth, Math.min(state.batch.width, signX * localX)));
+  const height = Math.round(Math.max(minHeight, Math.min(state.batch.height, signY * localY)));
+  const nextCenterX = anchorX + cosine * (signX * width / 2) - sine * (signY * height / 2);
+  const nextCenterY = anchorY + sine * (signX * width / 2) + cosine * (signY * height / 2);
+  crop.width = width;
+  crop.height = height;
+  crop.x = Math.round(nextCenterX - width / 2);
+  crop.y = Math.round(nextCenterY - height / 2);
+}
+
+function cropAtPoint(point) {
+  return [...state.batch.crops].reverse().find((crop) => {
+    const dx = point.x - (crop.x + crop.width / 2);
+    const dy = point.y - (crop.y + crop.height / 2);
+    const angle = cropRotation(crop) * Math.PI / 180;
+    const localX = dx * Math.cos(angle) + dy * Math.sin(angle);
+    const localY = -dx * Math.sin(angle) + dy * Math.cos(angle);
+    return Math.abs(localX) <= crop.width / 2 && Math.abs(localY) <= crop.height / 2;
+  });
+}
+
+function deleteCropAtPointer(event) {
+  event.preventDefault();
+  if (!state.batch) return;
+  const crop = cropAtPoint(eventToImagePoint(event));
+  if (!crop) return;
+  state.batch.crops = state.batch.crops.filter((item) => item.id !== crop.id);
+  renderPhotoList();
+  showToast('Crop removed.');
 }
 
 function angleDelta(current, previous) {
@@ -503,6 +780,12 @@ function canvasPointerDown(event) {
   elements.canvas.setPointerCapture(event.pointerId);
   const point = eventToImagePoint(event);
   const handle = cropAtHandle(event.clientX, event.clientY);
+  if (handle?.action === 'resize') {
+    state.resizing = { crop: handle.crop, corner: handle.corner, pointerId: event.pointerId };
+    elements.canvas.style.cursor = 'grabbing';
+    elements.canvasWrap.classList.add('is-resizing');
+    return;
+  }
   if (handle?.action === 'rotate') {
     const { crop } = handle;
     const centerX = crop.x + crop.width / 2;
@@ -545,8 +828,16 @@ function canvasPointerMove(event) {
     paintCanvas();
     return;
   }
+  if (state.resizing?.pointerId === event.pointerId) {
+    resizeCropFromCorner(state.resizing.crop, state.resizing.corner, eventToImagePoint(event, false));
+    paintCanvas();
+    return;
+  }
   if (!state.drawing) {
-    elements.canvas.style.cursor = cropAtHandle(event.clientX, event.clientY) ? 'grab' : 'crosshair';
+    const handle = cropAtHandle(event.clientX, event.clientY);
+    elements.canvas.style.cursor = handle?.action === 'resize'
+      ? (handle.corner === 'topLeft' || handle.corner === 'bottomRight' ? 'nwse-resize' : 'nesw-resize')
+      : handle ? 'grab' : 'crosshair';
     return;
   }
   state.drawing.current = eventToImagePoint(event);
@@ -579,6 +870,13 @@ function canvasPointerUp(event) {
     renderPhotoList();
     return;
   }
+  if (state.resizing?.pointerId === event.pointerId) {
+    state.resizing = null;
+    elements.canvasWrap.classList.remove('is-resizing');
+    elements.canvas.style.cursor = 'crosshair';
+    renderPhotoList();
+    return;
+  }
   if (!state.drawing) return;
   const start = state.drawing.start; const end = eventToImagePoint(event);
   const width = Math.abs(start.x - end.x); const height = Math.abs(start.y - end.y); state.drawing = null;
@@ -586,7 +884,7 @@ function canvasPointerUp(event) {
   if (movedOnScreen > 8 && width > state.batch.width * .018 && height > state.batch.height * .018) {
     state.manualId += 1;
     state.batch.crops.push({ id: `manual-${state.manualId}`, x: Math.round(Math.min(start.x, end.x)), y: Math.round(Math.min(start.y, end.y)),
-      width: Math.round(width), height: Math.round(height), rotation: 0, selected: true, date: null, latitude: null, longitude: null });
+      width: Math.round(width), height: Math.round(height), rotation: 0, source: 'manual', selected: true, date: null, latitude: null, longitude: null });
     renderPhotoList(); showToast('Manual crop added. Drag over another photo to add its crop.'); return;
   }
   const hit = [...state.batch.crops].reverse().find((crop) => {
@@ -609,6 +907,7 @@ elements.device.addEventListener('change', updateScannerStatus);
 elements.dpi.addEventListener('change', updateScannerStatus);
 elements.setup.addEventListener('click', () => window.scanbox.openScannerHelp());
 elements.redetect.addEventListener('click', redetect);
+elements.detectionToggle.addEventListener('click', togglePhotoDetection);
 elements.sensitivity.addEventListener('input', () => { elements.sensitivityValue.textContent = elements.sensitivity.value; });
 elements.chooseFolder.addEventListener('click', chooseFolder);
 elements.save.addEventListener('click', savePhotos);
@@ -618,6 +917,7 @@ elements.selectAll.addEventListener('click', () => {
   crops.forEach((crop) => { crop.selected = next; }); renderPhotoList();
 });
 elements.mapOpen.addEventListener('click', openMap);
+elements.mapSearchForm.addEventListener('submit', searchMapPlaces);
 elements.closeMap.addEventListener('click', closeMap);
 elements.mapModal.addEventListener('click', (event) => { if (event.target === elements.mapModal) closeMap(); });
 elements.confirmPlace.addEventListener('click', confirmLocation);
@@ -625,7 +925,8 @@ elements.clearPlace.addEventListener('click', clearLocation);
 elements.canvas.addEventListener('pointerdown', canvasPointerDown);
 elements.canvas.addEventListener('pointermove', canvasPointerMove);
 elements.canvas.addEventListener('pointerup', canvasPointerUp);
-elements.canvas.addEventListener('pointercancel', () => { state.drawing = null; state.rotating = null; state.moving = null; state.panning = null; elements.canvas.style.cursor = 'crosshair'; elements.canvasWrap.classList.remove('is-panning', 'is-rotating', 'is-moving'); paintCanvas(); });
+elements.canvas.addEventListener('contextmenu', deleteCropAtPointer);
+elements.canvas.addEventListener('pointercancel', () => { state.drawing = null; state.rotating = null; state.moving = null; state.resizing = null; state.panning = null; elements.canvas.style.cursor = 'crosshair'; elements.canvasWrap.classList.remove('is-panning', 'is-rotating', 'is-moving', 'is-resizing'); paintCanvas(); });
 elements.stage.addEventListener('wheel', zoomPreview, { passive: false });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeMap(); });
 
@@ -641,6 +942,8 @@ function stepDateValue(input, step) {
 for (const input of [elements.dateDay, elements.dateMonth, elements.dateYear]) {
   input.addEventListener('input', (event) => {
     input.value = input.value.replace(/\D/g, '').slice(0, input === elements.dateYear ? 4 : 2);
+    persistPhotoDetails({ date: !state.birthdayMode, birthday: state.birthdayMode, location: false });
+    renderPhotoList();
     if (event.isTrusted && input !== elements.dateYear && input.value.length === 2) {
       (input === elements.dateDay ? elements.dateMonth : elements.dateYear).focus();
     }
@@ -652,6 +955,18 @@ for (const input of [elements.dateDay, elements.dateMonth, elements.dateYear]) {
   });
 }
 
+elements.birthdayModeToggle.addEventListener('click', () => {
+  state.birthdayMode = !state.birthdayMode;
+  updateDateMode();
+  persistPhotoDetails({ date: !state.birthdayMode, birthday: true, location: false });
+  renderPhotoList();
+});
+
+elements.birthdayAge.addEventListener('input', () => {
+  persistPhotoDetails({ date: false, birthday: true, location: false });
+  renderPhotoList();
+});
+
 for (const button of document.querySelectorAll('.date-step-button')) {
   button.addEventListener('click', () => {
     const input = $(button.dataset.dateTarget);
@@ -659,5 +974,6 @@ for (const button of document.querySelectorAll('.date-step-button')) {
   });
 }
 renderPhotoList();
+restorePhotoDetails();
 restoreOutputFolder();
 loadDevices().then(updateScannerStatus);
