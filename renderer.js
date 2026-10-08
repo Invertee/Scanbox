@@ -1,4 +1,5 @@
-const state = { batch: null, devices: [], outputDirectory: '', place: null, map: null, marker: null, pendingPlace: null, mapSearchRequest: 0, manualId: 0, drawing: null, rotating: null, moving: null, resizing: null, panning: null, zoom: 1, panX: 0, panY: 0, toastTimer: null, busy: false, photoDetectionEnabled: true, birthdayMode: false, numberLookupId: 0 };
+const electronMode = Boolean(window.scanbox);
+const state = { batch: null, devices: [], outputDirectory: '', place: null, map: null, marker: null, pendingPlace: null, mapSearchRequest: 0, manualId: 0, drawing: null, rotating: null, moving: null, resizing: null, panning: null, zoom: 1, panX: 0, panY: 0, toastTimer: null, busy: false, photoDetectionEnabled: true, birthdayMode: false, numberLookupId: 0, browserSourceUrl: null };
 const $ = (id) => document.getElementById(id);
 const elements = {
   scannerName: $('sidebarScannerName'), scannerDriver: $('sidebarScannerDriver'), scannerDot: $('scannerStatusDot'),
@@ -14,8 +15,21 @@ const elements = {
   closeMap: $('closeMapBtn'), coordinateText: $('coordinateText'), confirmPlace: $('confirmLocationBtn'), clearPlace: $('clearLocationBtn'),
   mapSearch: $('mapSearch'), mapSearchForm: $('mapSearchForm'), mapSearchInput: $('mapSearchInput'), mapSearchButton: $('mapSearchButton'),
   mapSearchResults: $('mapSearchResults'), mapSearchStatus: $('mapSearchStatus'),
-  sensitivity: $('sensitivity'), sensitivityValue: $('sensitivityValue')
+  sensitivity: $('sensitivity'), sensitivityValue: $('sensitivityValue'),
+  browserImage: $('browserImageInput'), saveNote: $('saveNote')
 };
+
+if (!electronMode) {
+  document.body.classList.add('browser-mode');
+  document.querySelector('.empty-preview h3').textContent = 'Import a page or photo';
+  document.querySelector('.empty-preview p').innerHTML = 'Choose an image from your device to start cropping.<br />Your selected photos will download as JPEGs.';
+  document.querySelector('.panel-heading h3').textContent = 'Image preview';
+  elements.subtitle.textContent = 'Choose an image to begin';
+  elements.import.querySelector('strong').textContent = 'Choose an image';
+  elements.import.querySelector('small').textContent = 'from this device';
+  document.querySelector('.meta-heading span').textContent = 'Details are saved in this browser';
+  elements.saveNote.innerHTML = '<span>✓</span> Date, GPS coordinates, and resolution are embedded in each downloaded JPEG.';
+}
 
 function showToast(message, isError = false) {
   elements.toast.textContent = message;
@@ -25,14 +39,18 @@ function showToast(message, isError = false) {
   state.toastTimer = setTimeout(() => elements.toast.classList.add('hidden'), 4200);
 }
 
-function setBusy(busy, title = 'Reading your page…', detail = 'This can take a moment at high resolution') {
-  elements.overlay.classList.toggle('hidden', !busy);
-  elements.processingTitle.textContent = title;
-  elements.processingDetail.textContent = detail;
-  elements.scan.disabled = busy;
-  elements.import.disabled = busy;
-  elements.emptyImport.disabled = busy;
-  elements.refresh.disabled = busy;
+function storedPhotoDetails() {
+  try { return JSON.parse(localStorage.getItem('scanbox-photo-details') || '{}'); }
+  catch { return {}; }
+}
+
+function savePhotoDetails(details) {
+  if (electronMode) return window.scanbox.savePhotoDetails(details);
+  try {
+    const saved = { ...storedPhotoDetails(), ...details };
+    localStorage.setItem('scanbox-photo-details', JSON.stringify(saved));
+    return Promise.resolve(saved);
+  } catch (error) { return Promise.reject(error); }
 }
 
 function selectedPhotos() { return state.batch?.crops.filter((photo) => photo.selected) || []; }
@@ -117,12 +135,12 @@ function persistPhotoDetails({ date = !state.birthdayMode, birthday = false, loc
   if (date) details.date = { day: elements.dateDay.value, month: elements.dateMonth.value, year: elements.dateYear.value };
   if (birthday) details.birthday = { enabled: state.birthdayMode, dateOfBirth: datePickerPhotoDate() || '', age: elements.birthdayAge.value };
   if (location) details.location = state.place;
-  window.scanbox.savePhotoDetails(details).catch((error) => showToast(error.message || 'Could not save the photo details.', true));
+  savePhotoDetails(details).catch((error) => showToast(error.message || 'Could not save the photo details.', true));
 }
 
 async function restorePhotoDetails() {
   try {
-    const details = await window.scanbox.getLastPhotoDetails();
+    const details = electronMode ? await window.scanbox.getLastPhotoDetails() : storedPhotoDetails();
     elements.dateDay.value = details.date?.day || '';
     elements.dateMonth.value = details.date?.month || '';
     elements.dateYear.value = details.date?.year || '';
@@ -149,7 +167,7 @@ function updatePhotoCount() {
   elements.selectionSummary.textContent = count ? `${selected} of ${count} selected to save` : 'No photos found yet';
   elements.selectAll.classList.toggle('hidden', count === 0);
   elements.selectAll.textContent = selected === count ? 'Deselect all' : 'Select all';
-  elements.save.disabled = state.busy || !count || selected === 0 || !state.outputDirectory;
+  elements.save.disabled = state.busy || !count || selected === 0 || (electronMode && !state.outputDirectory);
   elements.detectionToggle.disabled = state.busy || !state.batch;
   elements.detectionToggle.setAttribute('aria-pressed', String(state.photoDetectionEnabled));
   elements.detectionToggle.setAttribute('aria-label', `Photo detection ${state.photoDetectionEnabled ? 'on' : 'off'}`);
@@ -392,6 +410,7 @@ function setBatch(batch) {
 }
 
 async function loadDevices() {
+  if (!electronMode) return;
   const previousDevice = elements.device.value;
   elements.device.innerHTML = '<option value="">Looking for scanners…</option>';
   elements.refresh.disabled = true;
@@ -439,6 +458,7 @@ function setBusy(busy, title = 'Reading your page…', detail = 'This can take a
 }
 
 async function runScan() {
+  if (!electronMode) return importImage();
   if (!elements.device.value) { showToast('Choose a scanner first, or import an image to try the cropper.', true); return; }
   setBusy(true, 'Scanning your A4 page…', `${elements.dpi.value} DPI · colour · flatbed`);
   try {
@@ -450,10 +470,90 @@ async function runScan() {
 }
 
 async function importImage() {
+  if (!electronMode) { elements.browserImage.click(); return; }
   setBusy(true, 'Preparing your image…', state.photoDetectionEnabled ? 'Finding photos against the scanner background' : 'Loading the image without photo detection');
   try { const batch = await window.scanbox.chooseImage({ detectPhotos: state.photoDetectionEnabled }); if (batch) setBatch(batch); }
   catch (error) { showToast(error.message || 'The image could not be opened.', true); }
   finally { setBusy(false); }
+}
+
+function browserDetectCrops(image, threshold = Number(elements.sensitivity.value), padding = .025) {
+  const scale = Math.min(1, 1400 / image.naturalWidth);
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(image, 0, 0, width, height);
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const gray = new Uint8Array(width * height);
+  for (let pixel = 0, offset = 0; pixel < gray.length; pixel += 1, offset += 4) {
+    gray[pixel] = Math.round(pixels[offset] * .299 + pixels[offset + 1] * .587 + pixels[offset + 2] * .114);
+  }
+  const regions = window.ScanboxCropper.findPhotoRegions(gray, width, height, threshold, padding);
+  const scaleX = image.naturalWidth / width;
+  const scaleY = image.naturalHeight / height;
+  return regions.map((region, index) => ({
+    id: `crop-${index + 1}`,
+    x: Math.max(0, Math.round(region.x * scaleX)),
+    y: Math.max(0, Math.round(region.y * scaleY)),
+    width: Math.min(image.naturalWidth, Math.round(region.width * scaleX)),
+    height: Math.min(image.naturalHeight, Math.round(region.height * scaleY)),
+    source: 'detected',
+    selected: region.width < width * .98 && region.height < height * .98,
+    date: null,
+    latitude: null,
+    longitude: null
+  }));
+}
+
+function browserImageBatch(image, file, detectPhotos = true) {
+  const previewScale = Math.min(1, 1600 / image.naturalWidth);
+  const previewWidth = Math.max(1, Math.round(image.naturalWidth * previewScale));
+  const previewHeight = Math.max(1, Math.round(image.naturalHeight * previewScale));
+  const previewCanvas = document.createElement('canvas');
+  previewCanvas.width = previewWidth;
+  previewCanvas.height = previewHeight;
+  previewCanvas.getContext('2d').drawImage(image, 0, 0, previewWidth, previewHeight);
+  return {
+    sourceName: file.name,
+    imageData: previewCanvas.toDataURL('image/jpeg', .82),
+    image: image,
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+    dpi: 300,
+    previewWidth,
+    previewHeight,
+    crops: detectPhotos ? browserDetectCrops(image) : []
+  };
+}
+
+function loadBrowserImage(file) {
+  if (!file) return;
+  setBusy(true, 'Preparing your image…', state.photoDetectionEnabled ? 'Finding photo edges in your browser' : 'Loading the image without photo detection');
+  const sourceUrl = URL.createObjectURL(file);
+  const image = new Image();
+  image.onload = () => {
+    try {
+      if (image.naturalWidth * image.naturalHeight > 160_000_000 || Math.max(image.naturalWidth, image.naturalHeight) > 32767) {
+        throw new Error('This image is too large for browser mode. Choose an image under 160 megapixels with sides below 32,768 pixels.');
+      }
+      const batch = browserImageBatch(image, file, state.photoDetectionEnabled);
+      if (state.browserSourceUrl) URL.revokeObjectURL(state.browserSourceUrl);
+      state.browserSourceUrl = sourceUrl;
+      setBatch(batch);
+    } catch (error) {
+      URL.revokeObjectURL(sourceUrl);
+      showToast(error.message || 'The image could not be prepared.', true);
+    } finally { setBusy(false); }
+  };
+  image.onerror = () => {
+    URL.revokeObjectURL(sourceUrl);
+    showToast('This browser could not read the image. Try a JPEG, PNG, WebP, or BMP file.', true);
+    setBusy(false);
+  };
+  image.src = sourceUrl;
 }
 
 async function redetect() {
@@ -461,6 +561,11 @@ async function redetect() {
   const manualCrops = state.batch.crops.filter((crop) => crop.source === 'manual' || crop.id.startsWith('manual-'));
   setBusy(true, 'Finding photo edges…', 'Re-running the photo separation');
   try {
+    if (!electronMode) {
+      const crops = browserDetectCrops(state.batch.image, Number(elements.sensitivity.value));
+      setBatch({ ...state.batch, crops: [...crops, ...manualCrops] });
+      return true;
+    }
     const response = await window.scanbox.redetect({ batchId: state.batch.batchId, threshold: Number(elements.sensitivity.value), padding: .025 });
     setBatch({ ...response, crops: [...(response.crops || []), ...manualCrops] });
     return true;
@@ -486,6 +591,7 @@ async function togglePhotoDetection() {
 }
 
 async function chooseFolder() {
+  if (!electronMode) return;
   const folder = await window.scanbox.chooseOutputFolder();
   if (folder) {
     state.outputDirectory = folder;
@@ -497,6 +603,7 @@ async function chooseFolder() {
 }
 
 async function updateNextNumber() {
+  if (!electronMode) return;
   const outputDirectory = state.outputDirectory;
   const prefix = elements.prefix.value;
   if (!outputDirectory) return;
@@ -510,6 +617,7 @@ async function updateNextNumber() {
 }
 
 async function restoreOutputFolder() {
+  if (!electronMode) return;
   try {
     const folder = await window.scanbox.getLastOutputFolder();
     if (folder && !state.outputDirectory) {
@@ -534,8 +642,78 @@ function applyFilledMetadata(date) {
   renderPhotoList();
 }
 
+function browserCropCanvas(crop) {
+  const image = state.batch.image;
+  const width = Math.round(crop.width);
+  const height = Math.round(crop.height);
+  if (width < 1 || height < 1 || width > 32767 || height > 32767 || width * height > 160_000_000) {
+    throw new Error('A selected crop is too large to export in this browser.');
+  }
+  const degrees = cropRotation(crop);
+  const radians = -degrees * Math.PI / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  const rotatedWidth = Math.abs(sine) < 1e-10 ? state.batch.width : Math.ceil(state.batch.width * Math.abs(cosine) + state.batch.height * Math.abs(sine));
+  const rotatedHeight = Math.abs(sine) < 1e-10 ? state.batch.height : Math.ceil(state.batch.height * Math.abs(cosine) + state.batch.width * Math.abs(sine));
+  const centerX = crop.x + width / 2 - state.batch.width / 2;
+  const centerY = crop.y + height / 2 - state.batch.height / 2;
+  const rotatedCenterX = cosine * centerX - sine * centerY + rotatedWidth / 2;
+  const rotatedCenterY = sine * centerX + cosine * centerY + rotatedHeight / 2;
+  const left = Math.round(rotatedCenterX - width / 2);
+  const top = Math.round(rotatedCenterY - height / 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, width, height);
+  context.translate(-left, -top);
+  context.translate(rotatedWidth / 2, rotatedHeight / 2);
+  context.rotate(radians);
+  context.drawImage(image, -state.batch.width / 2, -state.batch.height / 2);
+  return canvas;
+}
+
+async function browserJpegBlob(canvas, photo) {
+  const jpeg = await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('The browser could not encode a JPEG download.')), 'image/jpeg', .96);
+  });
+  return window.ScanboxExif.addExif(jpeg, {
+    date: photo.date,
+    latitude: photo.latitude,
+    longitude: photo.longitude,
+    dpi: state.batch.dpi || 300
+  });
+}
+
+function safeBrowserPrefix(value) {
+  return String(value || 'Photo').replace(/[<>:"|?*]/g, '-').replaceAll('/', '-').replaceAll('\\', '-').trim() || 'Photo';
+}
+
+async function downloadSelectedPhotos(photos) {
+  const prefix = safeBrowserPrefix(elements.prefix.value);
+  const firstNumber = Math.max(1, Number(elements.start.value) || 1);
+  const downloads = await Promise.all(photos.map(async (photo, index) => {
+    const canvas = browserCropCanvas(photo);
+    const blob = await browserJpegBlob(canvas, photo);
+    return { photo, blob, filename: `${prefix}-${String(firstNumber + index).padStart(3, '0')}.jpg` };
+  }));
+  for (const download of downloads) {
+    const url = URL.createObjectURL(download.blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = download.filename;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+  return downloads.map(({ photo }) => photo.id);
+}
+
 async function savePhotos() {
-  if (!state.batch || !state.outputDirectory) return;
+  if (!state.batch || (electronMode && !state.outputDirectory)) return;
   const date = selectedPhotoDate();
   if (date === undefined) {
     showToast(state.birthdayMode ? 'Enter a valid birthday and an age from 0 to 120.' : 'Enter a valid date in DD / MM / YYYY format.', true);
@@ -546,8 +724,17 @@ async function savePhotos() {
     id: photo.id, x: photo.x, y: photo.y, width: photo.width, height: photo.height, rotation: cropRotation(photo),
     date: photo.date || null, latitude: photo.latitude, longitude: photo.longitude
   }));
-  setBusy(true, 'Saving your photos…', 'Cropping and adding the selected EXIF details');
+  setBusy(true, electronMode ? 'Saving your photos…' : 'Preparing JPEG downloads…', electronMode ? 'Cropping and adding the selected EXIF details' : 'Cropping your selected photos in this browser');
   try {
+    if (!electronMode) {
+      const savedIds = new Set(await downloadSelectedPhotos(selectedPhotos()));
+      state.batch.crops.forEach((photo) => { if (savedIds.has(photo.id)) photo.selected = false; });
+      renderPhotoList();
+      const saved = savedIds.size;
+      showToast(`${saved} ${saved === 1 ? 'photo is' : 'photos are'} downloading. Check your browser’s downloads.`);
+      elements.start.value = String((Number(elements.start.value) || 1) + saved);
+      return;
+    }
     const result = await window.scanbox.saveBatch({ batchId: state.batch.batchId, outputDirectory: state.outputDirectory,
       prefix: elements.prefix.value, startNumber: Number(elements.start.value) || 1, photos });
     const savedIds = new Set(result.savedIds || []);
@@ -617,13 +804,46 @@ async function searchMapPlaces(event) {
   elements.mapSearchResults.classList.add('hidden');
   elements.mapSearchStatus.textContent = 'Searching places…';
   try {
-    const results = await window.scanbox.searchMapPlaces(query);
+    const results = electronMode
+      ? await window.scanbox.searchMapPlaces(query)
+      : await searchBrowserMapPlaces(query);
     if (requestId === state.mapSearchRequest) renderMapSearchResults(results);
   } catch (error) {
     if (requestId === state.mapSearchRequest) elements.mapSearchStatus.textContent = error.message || 'Place search failed. Check your connection and try again.';
   } finally {
     if (requestId === state.mapSearchRequest) elements.mapSearchButton.disabled = false;
   }
+}
+
+const browserPlaceCache = new Map();
+let browserNextPlaceSearchAt = 0;
+
+async function searchBrowserMapPlaces(query) {
+  const normalizedQuery = query.trim().replace(/\s+/g, ' ');
+  const cacheKey = normalizedQuery.toLocaleLowerCase('en-GB');
+  const cached = browserPlaceCache.get(cacheKey);
+  if (cached) return cached;
+  const delay = Math.max(0, browserNextPlaceSearchAt - Date.now());
+  browserNextPlaceSearchAt = Math.max(Date.now(), browserNextPlaceSearchAt) + 1100;
+  if (delay) await new Promise((resolve) => window.setTimeout(resolve, delay));
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', normalizedQuery);
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('limit', '6');
+  const response = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!response.ok) throw new Error(`Place search failed (HTTP ${response.status}).`);
+  const data = await response.json();
+  if (!Array.isArray(data)) throw new Error('Place search returned an invalid response.');
+  const results = data.slice(0, 6).map((place) => ({
+    latitude: Number(place.lat),
+    longitude: Number(place.lon),
+    name: String(place.name || place.display_name || 'Unnamed place'),
+    label: String(place.display_name || place.name || 'Unnamed place'),
+    type: String(place.type || '')
+  })).filter((place) => Number.isFinite(place.latitude) && Number.isFinite(place.longitude)
+    && Math.abs(place.latitude) <= 90 && Math.abs(place.longitude) <= 180);
+  browserPlaceCache.set(cacheKey, results);
+  return results;
 }
 
 function openMap() {
@@ -639,7 +859,7 @@ function openMap() {
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>' }).addTo(state.map);
     const creditsLink = elements.map.querySelector('.leaflet-control-attribution a');
-    creditsLink?.addEventListener('click', (event) => { event.preventDefault(); window.scanbox.openMapCredits(); });
+    if (electronMode) creditsLink?.addEventListener('click', (event) => { event.preventDefault(); window.scanbox.openMapCredits(); });
     state.map.on('click', (event) => {
       state.pendingPlace = { latitude: event.latlng.lat, longitude: event.latlng.lng };
       syncMapMarker(state.pendingPlace); elements.coordinateText.textContent = formatCoordinate(state.pendingPlace); elements.confirmPlace.disabled = false;
@@ -659,7 +879,7 @@ function confirmLocation() {
   elements.placeSummary.textContent = state.place ? formatCoordinate(state.place) : 'No location selected';
   persistPhotoDetails({ date: false });
   closeMap();
-  if (state.place) showToast('Location selected. It will be added to the selected photos when you save.');
+  if (state.place) showToast(electronMode ? 'Location selected. It will be added to the selected photos when you save.' : 'Location selected for this browser session.');
 }
 function clearLocation() {
   state.pendingPlace = null; state.place = null; syncMapMarker(null);
@@ -901,11 +1121,15 @@ function canvasPointerUp(event) {
 elements.scan.addEventListener('click', runScan);
 elements.import.addEventListener('click', importImage);
 elements.emptyImport.addEventListener('click', importImage);
+elements.browserImage.addEventListener('change', () => {
+  loadBrowserImage(elements.browserImage.files?.[0]);
+  elements.browserImage.value = '';
+});
 elements.refresh.addEventListener('click', loadDevices);
 elements.driver.addEventListener('change', () => { loadDevices(); updateScannerStatus(); });
 elements.device.addEventListener('change', updateScannerStatus);
 elements.dpi.addEventListener('change', updateScannerStatus);
-elements.setup.addEventListener('click', () => window.scanbox.openScannerHelp());
+elements.setup.addEventListener('click', () => { if (electronMode) window.scanbox.openScannerHelp(); });
 elements.redetect.addEventListener('click', redetect);
 elements.detectionToggle.addEventListener('click', togglePhotoDetection);
 elements.sensitivity.addEventListener('input', () => { elements.sensitivityValue.textContent = elements.sensitivity.value; });

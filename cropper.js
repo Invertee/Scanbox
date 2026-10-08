@@ -125,4 +125,5 @@ function findPhotoRegions(gray, width, height, threshold = 242, padding = 0.025)
     .sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
-module.exports = { findPhotoRegions };
+if (typeof module !== 'undefined' && module.exports) module.exports = { findPhotoRegions };
+if (typeof window !== 'undefined') window.ScanboxCropper = { findPhotoRegions };

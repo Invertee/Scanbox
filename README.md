@@ -2,7 +2,7 @@
 
 ![Scanbox Photo Studio](https://raw.githubusercontent.com/Invertee/Scanbox/main/box.png)
 
-A Windows desktop app for scanning several prints from an A4 flatbed, separating the photos, reviewing the crop boxes, and exporting individual JPEGs with EXIF dates and GPS coordinates.
+An Electron desktop app and static browser app for separating several prints from an image, reviewing crop boxes, and exporting individual JPEGs. The Electron app can scan directly from an A4 flatbed and write EXIF dates and GPS coordinates.
 
 ## What it does
 
@@ -42,9 +42,17 @@ The interactive NSIS installer is created in `dist/` with a name like `Scanbox-P
 
 NAPS2 is installed separately and is not bundled in this installer. Install it on each PC that will use a scanner; importing existing images does not require it.
 
+## Run in a browser or on GitHub Pages
+
+The browser version detects that it is outside Electron automatically. The [Pages workflow](.github/workflows/pages.yml) publishes the required static files whenever changes are pushed to `main`, or when run manually from the Actions tab. To enable it, open the repository’s **Settings → Pages** and set **Build and deployment → Source** to **GitHub Actions**.
+
+In browser mode, the scanner sidebar and **Scan A4 page** control are hidden. Choose **Import an image** to open a JPEG, PNG, WebP, or BMP from your device. Cropping and photo detection run in the browser, and **Save selected photos** downloads the selected crops as JPEG files with date, GPS, and resolution EXIF metadata. Images are not uploaded by the app. Browser preferences are stored in that browser’s local storage.
+
+The Leaflet map library is included under `vendor/leaflet`, so the static page does not need `node_modules`. Map tiles and place search still require an internet connection.
+
 ## Notes
 
-- Images are read, cropped, and written on the local PC. EXIF dates are stored at midnight because the selector records a date without a time.
-- The map fetches visible map tiles from OpenStreetMap and searches places with OpenStreetMap Nominatim when you submit a search. Search queries are cached in memory for 24 hours; set `SCANBOX_MAP_SEARCH_URL` to use a compatible search service instead. Map use requires an internet connection.
-- The last photo date and location are saved in Scanbox's local preferences and restored when the app opens.
+- Electron reads, crops, and writes images on the local PC. EXIF dates are stored at midnight because the selector records a date without a time. Browser mode processes images in the browser and downloads JPEG crops with EXIF metadata.
+- The map fetches visible map tiles from OpenStreetMap and searches places with OpenStreetMap Nominatim when you submit a search. Electron caches search queries for 24 hours; browser mode caches them for the current tab. Set `SCANBOX_MAP_SEARCH_URL` to use a compatible search service in Electron. Map use requires an internet connection.
+- Electron saves the last photo date and location in Scanbox's local preferences; browser mode uses that browser's local storage.
 - A scanner and NAPS2 are not required for the import-image workflow.

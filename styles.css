@@ -58,6 +58,42 @@ button { cursor:pointer; }
 .date-parts .date-part-year input { width:34px; }
 .date-stepper { flex:0 0 10px; width:10px; height:22px; display:flex; flex-direction:column; align-items:center; justify-content:center; margin-left:1px; }
 .date-parts .date-step-button { width:11px; height:10px; padding:0; border:0; border-radius:2px; background:transparent; color:#87958b; font-size:7.2px; line-height:9.6px; display:grid; place-items:center; }
+
+body.browser-mode { min-width:320px; }
+.browser-mode .sidebar,.browser-mode #scanBtn,.browser-mode .folder-row,.browser-mode .empty-scanner-art { display:none; }
+.browser-mode .main-area { width:100%; height:auto; min-height:100vh; }
+.browser-mode .main-scroll { width:100%; max-width:1640px; margin:0 auto; padding:30px clamp(16px,4vw,58px); overflow:visible; }
+.browser-mode .meta-toolbar { flex-wrap:wrap; justify-content:center; padding:17px; }
+.browser-mode .meta-heading { flex:1 1 100%; justify-content:center; text-align:center; }
+.browser-mode .meta-inputs { flex-wrap:wrap; justify-content:center; }
+.browser-mode .content-grid { grid-template-columns:minmax(0,1.55fr) minmax(300px,.9fr); gap:16px; min-height:560px; }
+.browser-mode .preview-panel,.browser-mode .photos-panel { min-height:560px; }
+.browser-mode .canvas-wrap canvas { max-height:min(58vh,620px); }
+.browser-mode .save-heading>div>strong { font-size:12px; }
+.browser-mode .save-heading span { font-size:10px; }
+.browser-mode .save-fields input { height:34px; font-size:12px; }
+.browser-mode .button-save { height:42px; font-size:12px; }
+.browser-mode .exif-note { font-size:9.6px; }
+@media (max-width:980px) {
+  .browser-mode .content-grid { grid-template-columns:minmax(0,1fr); }
+  .browser-mode .preview-panel { min-height:500px; }
+  .browser-mode .photos-panel { min-height:430px; }
+  .browser-mode .main-scroll { padding:20px 16px; }
+}
+@media (max-width:600px) {
+  .browser-mode .meta-inputs { width:100%; align-items:flex-start; }
+  .browser-mode .meta-heading { min-width:0; }
+  .browser-mode .meta-heading strong { font-size:12px; }
+  .browser-mode .meta-heading span { font-size:9px; }
+  .browser-mode .place-select { width:168px; }
+  .browser-mode .preview-tools { flex-wrap:wrap; justify-content:flex-end; }
+  .browser-mode .panel-heading { align-items:flex-start; }
+  .browser-mode .preview-footer { padding:0 8px; font-size:8px; }
+  .browser-mode .manual-tip { display:none; }
+  .browser-mode .map-dialog { width:96vw; }
+  .browser-mode .map-footer { align-items:flex-start; flex-direction:column; }
+  .browser-mode .map-canvas { height:55vh; }
+}
 .date-parts .date-step-button:hover { background:#edf5ef; color:#357758; }
 .date-parts .date-step-button:focus-visible { outline:1px solid #6c9b78; outline-offset:0; }
 .canvas-wrap.is-moving canvas,.canvas-wrap.is-rotating canvas,.canvas-wrap.is-resizing canvas { cursor:grabbing; }

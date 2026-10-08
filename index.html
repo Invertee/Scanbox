@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://tile.openstreetmap.org; connect-src 'self' https://tile.openstreetmap.org; font-src 'self' data:" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://tile.openstreetmap.org; connect-src 'self' https://tile.openstreetmap.org https://nominatim.openstreetmap.org; font-src 'self' data:" />
     <title>Scanbox Photo Studio</title>
-    <link rel="stylesheet" href="node_modules/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -99,7 +99,7 @@
                 <div class="save-fields"><label><span>FILE NAME</span><input id="filenamePrefix" type="text" value="Photo" maxlength="32" /></label><label class="start-number"><span>START AT</span><input id="startNumber" type="number" value="1" min="1" max="99999" /></label></div>
                 <div class="folder-row"><button id="chooseFolderBtn" class="folder-button"><span class="folder-icon">▰</span><span id="folderSummary">Choose a save folder</span><b>Browse</b></button></div>
                 <button id="saveBtn" class="button button-save" disabled><span>Save selected photos</span><span class="save-arrow">→</span></button>
-                <p class="exif-note"><span>✓</span> Date and GPS coordinates are written into each photo’s EXIF data.</p>
+                <p class="exif-note" id="saveNote"><span>✓</span> Date and GPS coordinates are written into each photo’s EXIF data.</p>
               </div>
             </section>
           </div>
@@ -125,7 +125,10 @@
         <div class="map-footer"><div class="coordinates"><span class="coordinate-pin">⌖</span><span><small>SELECTED COORDINATES</small><strong id="coordinateText">No point selected</strong></span></div><div class="map-actions"><button id="clearLocationBtn" class="button button-secondary button-small">Clear location</button><button id="confirmLocationBtn" class="button button-primary button-small" disabled>Use this location</button></div></div>
       </div>
     </div>
-    <script src="node_modules/leaflet/dist/leaflet.js"></script>
+    <input id="browserImageInput" class="hidden" type="file" accept="image/jpeg,image/png,image/webp,image/bmp" />
+    <script src="vendor/leaflet/leaflet.js"></script>
+    <script src="cropper.js"></script>
+    <script src="browser-exif.js"></script>
     <script src="renderer.js"></script>
   </body>
 </html>
